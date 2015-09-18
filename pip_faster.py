@@ -402,3 +402,7 @@ def main():
         raise
 
     return exit_code
+
+
+if __name__ == '__main__':
+    exit(main())

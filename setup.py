@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from __future__ import absolute_import
 from __future__ import print_function
-from __future__ import unicode_literals
+# from __future__ import unicode_literals
 
 from setuptools import find_packages
 from setuptools import setup
@@ -10,7 +10,7 @@ from setuptools import setup
 def main():
     setup(
         name='venv-update',
-        version='0.1.2dev0',
+        version='0.1.2dev2',
         description='Quickly and exactly synchronize a virtualenv with a requirements.txt',
         url='https://github.com/Yelp/venv-update',
         author='Buck Evan',
@@ -38,6 +38,7 @@ def main():
         entry_points={
             'console_scripts': [
                 'venv-update = venv_update:main',
+                'pip-faster = pip_faster:main',
             ],
         },
         keywords=['pip', 'virtualenv'],
