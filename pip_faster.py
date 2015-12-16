@@ -140,7 +140,7 @@ class FasterWheelBuilder(WheelBuilder):
         buildset = [
             req for req in reqset
             # FASTER: don't wheel things that have no source available
-            if not req.is_wheel and req.source_dir
+            if not req.is_wheel and req.source_dir and not req.editable
         ]
 
         if not buildset:

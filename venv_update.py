@@ -121,18 +121,24 @@ def validate_venv(venv_path, venv_args):
         except IOError:
             previous_state = {}
 
-        if previous_state.get('validation') == validation:
+        old_validation = previous_state.get('validation')
+        if old_validation == validation:
             info('Keeping virtualenv from previous run.')
             return
         else:
             info('Removing invalidated virtualenv.')
-            info('(%r != %r)' % (validation, validation))
+            info('(%r != %r)' % (validation, old_validation))
             # TODO: error out if venv_path is nonempty and doesn't look like a virtualenv
             run(('rm', '-rf', venv_path))
 
     from distutils.spawn import find_executable as which  # pylint:disable=import-error
     virtualenv = which('virtualenv')
     run((virtualenv, venv_path,) + venv_args)
+
+    # see https://bitbucket.org/ned/coveragepy/issues/340/keyerror-subpy#comment-13671053
+    local = join(virtualenv, 'local')
+    if exists(local):
+        run(('rm', '-rf', local))
 
     if isdir(venv_path):
         with open(state_path, 'w') as state:
