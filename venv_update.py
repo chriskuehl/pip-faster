@@ -228,9 +228,6 @@ def venv_update(venv_path, reqs, venv_args):
     if not exists(python):
         return 'virtualenv executable not found: %s' % python
 
-    # ensure that a compatible version of pip is installed
-    run((python, '-m', 'pip.__main__', '--version'))
-
     pipdir = homedir() + '/.pip'
     # We could combine these caches to one directory, but pip would search everything twice, going slower.
     pip_wheels = pipdir + '/wheelhouse'

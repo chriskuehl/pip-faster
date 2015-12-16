@@ -3,6 +3,7 @@ NEXT
 ====
 We plan to work on these as soon as possible.
 
+* neither pip-faster nor venv-update report their *own* versions
 
 - [ ] testing
   - [ ] PIP\_FIND\_LINKS=https://...
