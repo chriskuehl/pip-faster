@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from sys import executable as python
+
 import pytest
 
 from testing import enable_coverage
@@ -80,7 +82,7 @@ def test_virtualenv_moved(tmpdir):
 @pytest.mark.usefixtures('pypi_server')
 def test_recreate_active_virtualenv(tmpdir):
     with tmpdir.as_cwd():
-        run('virtualenv', 'virtualenv_run')
+        run('virtualenv', '--python', python, 'virtualenv_run')
         run('virtualenv_run/bin/pip', 'install', '-r', str(TOP / 'requirements.d/coverage.txt'))
 
         requirements('project_with_c')

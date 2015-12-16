@@ -1,2 +1,2 @@
 # these are the packages installed during venv-update bootstrap. meta.
-pip-faster==1.0rc1
+-e .

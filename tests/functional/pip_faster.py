@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from sys import executable as python
+
 import pytest
 
 from testing import enable_coverage
@@ -27,7 +29,7 @@ Package Index Options:
 @pytest.mark.usefixtures('pypi_server')
 def it_installs_stuff(tmpdir):
     venv = tmpdir.join('venv')
-    run('virtualenv', str(venv))
+    run('virtualenv', '--python', python, str(venv))
 
     assert pip_freeze(str(venv)) == '''\
 '''

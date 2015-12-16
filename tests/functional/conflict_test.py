@@ -127,7 +127,12 @@ def test_editable_egg_conflict(tmpdir):
         assert expected in out
         rest = out.rsplit(expected, 1)[-1]
 
-        from pip_faster import sysconfig
+        if True:  # :pragma:nocover:pylint:disable=using-constant-test
+            # Debian de-vendorizes the version of pip it ships
+            try:
+                from sysconfig import get_python_version
+            except ImportError:  # <= python2.6
+                from distutils.sysconfig import get_python_version
         assert (
             '''\
 Cleaning up...
@@ -141,7 +146,7 @@ Something went wrong! Sending 'virtualenv_run' back in time, so make knows it's 
 Waiting for all subprocesses to finish...
 DONE
 
-'''.format(sysconfig.get_python_version(), tmpdir)
+'''.format(get_python_version(), tmpdir)
         ) == rest
 
         assert_venv_marked_invalid(tmpdir.join('virtualenv_run'))

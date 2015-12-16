@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from sys import executable as python
+
 import pytest
 
 from testing import run
@@ -35,7 +37,7 @@ for p in sorted(p.reqnames(p.pip_get_installed())):
 def test_pip_get_installed(tmpdir):
     tmpdir.chdir()
 
-    run('virtualenv', 'myvenv')
+    run('virtualenv', '--python', python, 'myvenv')
     run('rm', '-rf', 'myvenv/local')
     run('myvenv/bin/pip', 'install', 'pip-faster==' + __version__)
 

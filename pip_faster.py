@@ -45,11 +45,6 @@ if True:  # :pragma:nocover:pylint:disable=using-constant-test
     except ImportError:
         import pkg_resources
 
-    try:  # changed in python2.7
-        import sysconfig
-    except ImportError:
-        from distutils import sysconfig
-
 
 def ignorecase_glob(glob):
     return ''.join([
@@ -485,29 +480,6 @@ def pipfaster_install_prune_option():
     return patched(pipmodule.commands, {FasterInstallCommand.name: FasterInstallCommand})
 
 
-@contextmanager
-def ubuntu_fix():
-    """ubuntu made some brain dead patches to move everything to /usr/local without thinking about virtualenvs
-    Undoing part of it here.
-
-    The most egregious bit is:
-    http://bazaar.launchpad.net/~ubuntu-branches/ubuntu/precise/python2.7/precise-security/view/head:/debian/patches/distutils-install-layout.diff#L282
-    """
-    if not hasattr(sysconfig, '_get_default_scheme'):
-        yield
-        return
-
-    import os
-    with patched(vars(sysconfig), {
-        '_get_default_scheme': lambda: os.name,
-    }):
-        INSTALL_SCHEMES = sysconfig._INSTALL_SCHEMES  # pylint:disable=protected-access
-        with patched(INSTALL_SCHEMES, {
-            'posix': INSTALL_SCHEMES['posix_prefix'],
-        }):
-            yield
-
-
 def improved_wheel_support():
     """get the wheel supported-tags from wheel, rather than vendor"""
     import pip.pep425tags
@@ -521,9 +493,8 @@ def main():
     with pipfaster_install_prune_option():
         with pipfaster_packagefinder():
             with pipfaster_install():
-                with ubuntu_fix():
-                    with improved_wheel_support():
-                        raise_on_failure(pipmodule.main)
+                with improved_wheel_support():
+                    raise_on_failure(pipmodule.main)
 
 
 if __name__ == '__main__':
