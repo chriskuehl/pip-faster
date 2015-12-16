@@ -99,10 +99,10 @@ def info(msg):
 def validate_venv(venv_path, venv_args):
     """Ensure we have a valid virtualenv."""
     import json
-    from sys import executable, version
+    import sys
     # we count any existing virtualenv invalidated if any of these relevant values changes
     validation = (
-        version,  # includes e.g. pypy version
+        sys.version,  # includes e.g. pypy version
         venv_args,
         venv_path,
     )
@@ -137,13 +137,13 @@ def validate_venv(venv_path, venv_args):
 
     # see https://bitbucket.org/ned/coveragepy/issues/340/keyerror-subpy#comment-13671053
     local = join(virtualenv, 'local')
-    if exists(local):
+    if exists(local):  # this is an ubuntu-specific bug :pragma:nocover:
         run(('rm', '-rf', local))
 
     if isdir(venv_path):
         with open(state_path, 'w') as state:
             json.dump(
-                dict(executable=executable, validation=validation),
+                dict(executable=sys.executable, validation=validation),
                 state,
             )
 
@@ -209,6 +209,13 @@ def venv_python(venv_path):
     return venv_executable(venv_path, 'python')
 
 
+def homedir():
+    # TODO-TEST: continues to work well (matches pwd pw_dir) when HOME is unset
+    # TODO-TEST: can be overridden with the HOME variable
+    from os.path import expanduser
+    return expanduser('~')
+
+
 def venv_update(venv_path, reqs, venv_args):
     """we have an arbitrary python interpreter active, (possibly) outside the virtualenv we want.
 
@@ -224,8 +231,7 @@ def venv_update(venv_path, reqs, venv_args):
     # ensure that a compatible version of pip is installed
     run((python, '-m', 'pip.__main__', '--version'))
 
-    from os import environ
-    pipdir = environ['HOME'] + '/.pip'
+    pipdir = homedir() + '/.pip'
     # We could combine these caches to one directory, but pip would search everything twice, going slower.
     pip_wheels = pipdir + '/wheelhouse'
 

@@ -34,6 +34,7 @@ from pip.index import PackageFinder
 from pip.wheel import WheelBuilder
 
 from venv_update import colorize
+from venv_update import homedir
 from venv_update import raise_on_failure
 from venv_update import timid_relpath
 
@@ -323,11 +324,10 @@ def reqnames(reqs):
 class CacheOpts(object):
 
     def __init__(self):
-        from os import environ
         # We put the cache in the directory that pip already uses.
         # This has better security characteristics than a machine-wide cache, and is a
         #   pattern people can use for open-source projects
-        self.pipdir = environ['HOME'] + '/.pip'
+        self.pipdir = homedir() + '/.pip'
         # We could combine these caches to one directory, but pip would search everything twice, going slower.
         self.pip_download_cache = self.pipdir + '/cache'
         self.pip_wheels = self.pipdir + '/wheelhouse'
