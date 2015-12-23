@@ -37,7 +37,7 @@ matrix:
           env: TOXENV=lint
 
 install:
-    - ./venv_update.py $VIRTUAL_ENV requirements.d/travis.txt
+    - ./venv_update.py $VIRTUAL_ENV -- -r requirements.d/travis.txt
     - python --version
     - pip --version
 script: tox
