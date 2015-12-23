@@ -234,5 +234,33 @@ def test_samefile(tmpdir):
         assert venv_update.samefile('d', 'b') is True
 
 
+def passwd():
+    import os
+    import pwd
+    return pwd.getpwuid(os.getuid())
+
+
 def test_user_cache_dir():
-    assert venv_update.user_cache_dir() == ''
+    assert venv_update.user_cache_dir() == passwd().pw_dir + '/.cache'
+
+    from os import environ
+    environ['HOME'] = '/foo/bar'
+    assert venv_update.user_cache_dir() == '/foo/bar/.cache'
+
+    environ['XDG_CACHE_HOME'] = '/quux/bar'
+    assert venv_update.user_cache_dir() == '/quux/bar'
+
+
+def test_get_python_version():
+    import sys
+
+    expected = '.'.join(str(part) for part in sys.version_info[:3])
+    actual = venv_update.get_python_version(sys.executable)
+    assert actual.startswith(expected + ' ')
+
+    assert venv_update.get_python_version('total garbage') is None
+
+    from subprocess import CalledProcessError
+    with pytest.raises(CalledProcessError) as excinfo:
+        venv_update.get_python_version('/bin/false')
+    assert excinfo.value.returncode == 1

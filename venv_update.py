@@ -100,11 +100,9 @@ def samefile(file1, file2):
 
 def user_cache_dir():
     # stolen from pip.utils.appdirs.user_cache_dir
-    # TODO-TEST: continues to work well (matches pwd pw_dir) when HOME is unset
-    # TODO-TEST: can be overridden with the HOME variable
     from os import getenv
     from os.path import expanduser
-    return getenv("XDG_CACHE_HOME", expanduser("~/.cache"))
+    return getenv('XDG_CACHE_HOME', expanduser('~/.cache'))
 
 
 def exec_(cmd):
@@ -134,17 +132,17 @@ def exec_intermediate_virtualenv(args):
         exec_((python, venv_update,) + args)
 
 
-def get_version(python):
-    if not exists(python):
+def get_python_version(interpreter):
+    if not exists(interpreter):
         return None
 
-    cmd = (python, '-c', 'import sys; print(sys.version)')
+    cmd = (interpreter, '-c', 'import sys; print(sys.version)')
 
     from subprocess import Popen, PIPE, CalledProcessError
-    python = Popen(cmd, stdout=PIPE)
-    output, _ = python.communicate()
-    if python.returncode:
-        raise CalledProcessError(python.returncode, cmd)
+    interpreter = Popen(cmd, stdout=PIPE)
+    output, _ = interpreter.communicate()
+    if interpreter.returncode:
+        raise CalledProcessError(interpreter.returncode, cmd)
     else:
         return output
 
@@ -185,8 +183,8 @@ def ensure_virtualenv(args):
         # 3) the interpreter virtualenv will create
         destination_python = venv_python(venv_path)
 
-        source_version = get_version(source_python)
-        destination_version = get_version(destination_python)
+        source_version = get_python_version(source_python)
+        destination_version = get_python_version(destination_python)
 
         if source_version == destination_version:
             raise SystemExit(0)  # looks good! we're done here.
