@@ -41,6 +41,7 @@ from venv_update import timid_relpath
 if True:  # :pragma:nocover:pylint:disable=using-constant-test
     # Debian de-vendorizes the version of pip it ships
     try:
+        # pylint:disable=ungrouped-imports
         from pip._vendor import pkg_resources
     except ImportError:
         import pkg_resources

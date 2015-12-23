@@ -26,7 +26,7 @@ from __future__ import unicode_literals
 from os.path import exists
 from os.path import join
 
-DEFAULT_VIRTUALENV_PATH = 'virtualenv_run'
+DEFAULT_VIRTUALENV_PATH = 'venv'
 VENV_UPDATE_REQS_OVERRIDE = 'requirements.d/venv-update.txt'
 __version__ = '1.0rc2.dev1'
 
@@ -113,22 +113,30 @@ def exec_(cmd):
 
 
 def exec_intermediate_virtualenv(args):
-    scratch = join(user_cache_dir(), 'venv-update')
+    """
+    goals:
+        - get any random site-packages off of the pythonpath
+        - ensure that virtuualenv is always importable
+        - ensure that we're not using the interpreter that we may need to delete
+        - idempotency: do nothing if the above goals are already met
+    """
+    scratch = join(user_cache_dir(), 'venv-update', __version__)
     intermediate_virtualenv = join(scratch, 'venv')
     python = venv_python(intermediate_virtualenv)
 
     if not exists(python):
         run(('virtualenv', intermediate_virtualenv))
     if not exists(join(scratch, 'virtualenv.py')):
+        # TODO: do we allow user-defined override of which version of virtualenv to use?
         run(('pip', 'install', '--target', scratch, 'virtualenv'))
 
     venv_update = join(scratch, 'venv-update')
-    if not exists(venv_update):
-        run(('cp', dotpy(__file__), venv_update))
-
     if samefile(dotpy(__file__), venv_update):
+        # TODO-TEST: the original venv-update's directory was on sys.path (when using symlinking)
         return  # all done!
     else:
+        # TODO-TEST: sometimes we would get a stale version of venv-update
+        run(('cp', dotpy(__file__), venv_update))
         exec_((python, venv_update,) + args)
 
 
@@ -164,8 +172,8 @@ def ensure_virtualenv(args):
             virtualenv_args[:] = [venv_path]
 
         if venv_path == DEFAULT_VIRTUALENV_PATH or options.prompt == '<dirname>':
-            from os.path import basename, dirname
-            options.prompt = '(%s)' % basename(dirname(venv_path))
+            from os.path import abspath, basename, dirname
+            options.prompt = '(%s)' % basename(dirname(abspath(venv_path)))
 
         notlocal.pip_args = tuple(virtualenv_args[1:])
         if not notlocal.pip_args:
@@ -244,6 +252,8 @@ def mark_venv_invalid(venv_path):
 
 
 def dotpy(filename):
+    from os.path import abspath
+    filename = abspath(filename)
     if filename.endswith(('.pyc', '.pyo', '.pyd')):
         return filename[:-1]
     else:
