@@ -181,6 +181,7 @@ def pipe_output(read, write):
     vupdate.wait()
 
     result = result.decode('US-ASCII')
+    print(result)
     uncolored = uncolor(result)
     assert uncolored.startswith('> ')
     # FIXME: Sometimes this is 'python -m', sometimes 'python2.7 -m'. Weird.
@@ -192,6 +193,7 @@ def pipe_output(read, write):
     return result, uncolored
 
 
+@pytest.mark.usefixtures('pypi_server')
 def test_colored_tty(tmpdir):
     tmpdir.chdir()
 
@@ -206,6 +208,7 @@ def test_colored_tty(tmpdir):
     assert out != uncolored
 
 
+@pytest.mark.usefixtures('pypi_server')
 def test_uncolored_pipe(tmpdir):
     tmpdir.chdir()
 

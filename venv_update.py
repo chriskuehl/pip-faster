@@ -147,14 +147,14 @@ def get_python_version(interpreter):
         return output
 
 
+# SMELL: global mutables :(
+class notlocal(object):
+    venv_path = None
+    pip_options = None
+
+
 def ensure_virtualenv(args):
     """Ensure we have a valid virtualenv."""
-    import virtualenv
-
-    class notlocal(object):
-        venv_path = None
-        pip_args = None
-
     def adjust_options(options, virtualenv_args):
         # TODO-TEST: proper error message with no arguments
         if virtualenv_args:
@@ -167,9 +167,9 @@ def ensure_virtualenv(args):
             from os.path import basename, dirname
             options.prompt = '(%s)' % basename(dirname(venv_path))
 
-        notlocal.pip_args = tuple(virtualenv_args[1:])
-        if not notlocal.pip_args:
-            notlocal.pip_args = ('-r', 'requirements.txt')
+        notlocal.pip_options = tuple(virtualenv_args[1:])
+        if not notlocal.pip_options:
+            notlocal.pip_options = ('-r', 'requirements.txt')
         del virtualenv_args[1:]
 
         # there are (potentially) *three* python interpreters involved here:
@@ -198,10 +198,10 @@ def ensure_virtualenv(args):
 
     # this is actually a documented extension point:
     #   http://virtualenv.readthedocs.org/en/latest/reference.html#adjust_options
+    import virtualenv
     virtualenv.adjust_options = adjust_options
 
     raise_on_failure(virtualenv.main)
-    return notlocal.venv_path, notlocal.pip_args
 
 
 def wait_for_all_subprocesses():
@@ -233,14 +233,11 @@ def mark_venv_valid(venv_path):
 def mark_venv_invalid(venv_path):
     # LBYL, to attempt to avoid any exception during exception handling
     from os.path import isdir
-    if venv_path is not None and isdir(venv_path):
+    if isdir(venv_path):
         info('')
         info("Something went wrong! Sending '%s' back in time, so make knows it's invalid." % timid_relpath(venv_path))
-        info('Waiting for all subprocesses to finish...')
         wait_for_all_subprocesses()
-        info('DONE')
         touch(venv_path, 0)
-        info('')
 
 
 def dotpy(filename):
@@ -284,12 +281,24 @@ def venv_update(args):
     # invariant: virtualenv (the library) is importable
     # invariant: we're not currently using the destination python
 
-    venv_path, pip_options = ensure_virtualenv(args)
-    # invariant: the final virtualenv exists, with the right python version
+    ensure_virtualenv(args)
+    if notlocal.venv_path is None:
+        return
 
+    try:
+        raise_on_failure(lambda: do_update(notlocal.venv_path, notlocal.pip_options))
+    except BaseException:
+        mark_venv_invalid(notlocal.venv_path)
+        raise
+    else:
+        mark_venv_valid(notlocal.venv_path)
+
+
+def do_update(venv_path, pip_options):
     python = venv_python(venv_path)
     if not exists(python):
         return 'virtualenv executable not found: %s' % python
+    # invariant: the final virtualenv exists, with the right python version
 
     pip_install = (python, '-m', 'pip.__main__', 'install') + CacheOpts().pip_options
 
@@ -322,15 +331,7 @@ def raise_on_failure(mainfunc):
 def main():
     from sys import argv
     args = tuple(argv[1:])
-    venv_path = parseargs(args)
-
-    try:
-        raise_on_failure(lambda: venv_update(args))
-    except BaseException:
-        mark_venv_invalid(venv_path)
-        raise
-    else:
-        mark_venv_valid(venv_path)
+    return venv_update(args)
 
 
 if __name__ == '__main__':
