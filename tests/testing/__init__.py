@@ -9,6 +9,7 @@ from re import MULTILINE
 from py._path.local import LocalPath as Path
 
 TOP = Path(__file__) / '../../..'
+COVERAGE_REQUIREMENTS = TOP.join('requirements.d/coverage.txt')
 
 
 def requirements(reqs, path='requirements.txt'):
@@ -107,6 +108,7 @@ def pip_freeze(venv='virtualenv_run'):
 
 def enable_coverage(tmpdir, venv='virtualenv_run', options=()):
     venv = tmpdir.join(venv)
-    venv_update(str(venv), str(TOP.join('requirements.d/coverage.txt')), *options)
+    options += ('--', '-r', str(COVERAGE_REQUIREMENTS))
+    venv_update(str(venv), *options)
 
     return venv

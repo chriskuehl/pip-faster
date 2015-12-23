@@ -83,28 +83,22 @@ def test_dotpy(filename, expected):
 @pytest.mark.parametrize('args,expected', [
     (
         (),
-        ('virtualenv_run', ('requirements.txt',), ()),
+        'virtualenv_run',
     ), (
         ('a',),
-        ('a', ('requirements.txt',), ())
+        'a',
     ), (
         ('a', 'b'),
-        ('a', ('b',), ())
-    ), (
-        ('a', 'b', 'c'),
-        ('a', ('b', 'c'), ())
-    ), (
-        ('a', 'b', 'c', 'd'),
-        ('a', ('b', 'c', 'd'), ())
+        'a',
     ), (
         ('a', '--opt', 'optval', 'b', 'c', 'd'),
-        ('a', ('optval', 'b', 'c', 'd'), ('--opt',))
+        'a',
     ), (
-        ('a', '--opt', 'optval', 'b', '--opt2', 'c', 'd'),
-        ('a', ('optval', 'b', 'c', 'd'), ('--opt', '--opt2'))
+        ('--opt', 'optval', 'a', 'b', 'c', 'd'),
+        'optval',
     ), (
-        ('--opt2', 'a', '--opt', 'optval', 'b', '--opt2', 'c', 'd'),
-        ('a', ('optval', 'b', 'c', 'd'), ('--opt2', '--opt', '--opt2'))
+        ('--', '--opt', 'optval', 'a', 'b', 'c', 'd'),
+        'virtualenv_run',
     ),
 ])
 def test_parseargs(args, expected):
@@ -222,3 +216,23 @@ def test_wait_for_all_subprocesses(monkeypatch):
 
     assert _nonlocal.wait == 0
     assert _nonlocal.thrown is True
+
+
+def test_samefile(tmpdir):
+    with tmpdir.as_cwd():
+        a = tmpdir.ensure('a')
+        b = tmpdir.ensure('b')
+        tmpdir.join('c').mksymlinkto(a, absolute=True)
+        tmpdir.join('d').mksymlinkto(b, absolute=False)
+
+        assert venv_update.samefile('a', 'b') is False
+        assert venv_update.samefile('a', 'x') is False
+        assert venv_update.samefile('x', 'a') is False
+
+        assert venv_update.samefile('a', 'a') is True
+        assert venv_update.samefile('a', 'c') is True
+        assert venv_update.samefile('d', 'b') is True
+
+
+def test_user_cache_dir():
+    assert venv_update.user_cache_dir() == ''

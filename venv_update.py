@@ -24,7 +24,9 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from os.path import exists
+from os.path import join
 
+DEFAULT_VIRTUALENV_PATH = 'virtualenv_run'
 VENV_UPDATE_REQS_OVERRIDE = 'requirements.d/venv-update.txt'
 __version__ = '1.0rc2.dev1'
 
@@ -33,36 +35,28 @@ __version__ = '1.0rc2.dev1'
 
 
 def parseargs(args):
+    """extremely rudimentary arg parsing, to handle --help and find the virtualenv path"""
     if set(args) & set(('-h', '--help')):
         print(__doc__, end='')
         exit(0)
 
-    args = list(args)
-    virtualenv_dir = None
-    requirements = []
-    remaining = []
-
     for arg in args:
-        if arg.startswith('-'):
-            remaining.append(arg)
-        elif virtualenv_dir is None:
-            virtualenv_dir = arg
+        if arg == '--':
+            break
+        elif arg.startswith('-'):
+            continue
         else:
-            requirements.append(arg)
+            return arg
 
-    if not virtualenv_dir:
-        virtualenv_dir = 'virtualenv_run'
-    if not requirements:
-        requirements = ['requirements.txt']
-
-    return virtualenv_dir, tuple(requirements), tuple(remaining)
+    return DEFAULT_VIRTUALENV_PATH
 
 
 def timid_relpath(arg):
-    from os.path import isabs, relpath
+    """convert an argument to a relative path, carefully"""
+    from os.path import isabs, relpath, sep
     if isabs(arg):
         result = relpath(arg)
-        if len(result) < len(arg):
+        if result.count(sep) + 1 < arg.count(sep):
             return result
 
     return arg
@@ -96,56 +90,120 @@ def info(msg):
     check_call(('echo', msg))
 
 
-def validate_venv(venv_path, venv_args):
+def samefile(file1, file2):
+    if not exists(file1) or not exists(file2):
+        return False
+    else:
+        from os.path import samefile
+        return samefile(file1, file2)
+
+
+def user_cache_dir():
+    # stolen from pip.utils.appdirs.user_cache_dir
+    # TODO-TEST: continues to work well (matches pwd pw_dir) when HOME is unset
+    # TODO-TEST: can be overridden with the HOME variable
+    from os import getenv
+    from os.path import expanduser
+    return getenv("XDG_CACHE_HOME", expanduser("~/.cache"))
+
+
+def exec_(cmd):
+    info('exec' + colorize(cmd))
+
+    from os import execv
+    execv(cmd[0], cmd)  # never returns
+
+
+def exec_intermediate_virtualenv(args):
+    scratch = join(user_cache_dir(), 'venv-update')
+    intermediate_virtualenv = join(scratch, 'venv')
+    python = venv_python(intermediate_virtualenv)
+
+    if not exists(python):
+        run(('virtualenv', intermediate_virtualenv))
+    if not exists(join(scratch, 'virtualenv.py')):
+        run(('pip', 'install', '--target', scratch, 'virtualenv'))
+
+    venv_update = join(scratch, 'venv-update')
+    if not exists(venv_update):
+        run(('cp', dotpy(__file__), venv_update))
+
+    if samefile(dotpy(__file__), venv_update):
+        return  # all done!
+    else:
+        exec_((python, venv_update,) + args)
+
+
+def get_version(python):
+    if not exists(python):
+        return None
+
+    cmd = (python, '-c', 'import sys; print(sys.version)')
+
+    from subprocess import Popen, PIPE, CalledProcessError
+    python = Popen(cmd, stdout=PIPE)
+    output, _ = python.communicate()
+    if python.returncode:
+        raise CalledProcessError(python.returncode, cmd)
+    else:
+        return output
+
+
+def ensure_virtualenv(args):
     """Ensure we have a valid virtualenv."""
-    import json
-    import sys
-    # we count any existing virtualenv invalidated if any of these relevant values changes
-    validation = (
-        sys.version,  # includes e.g. pypy version
-        venv_args,
-        venv_path,
-    )
-    # normalize types, via json round-trip
-    validation = json.loads(json.dumps(validation))
+    import virtualenv
 
-    from os.path import join, abspath
-    venv_path = abspath(venv_path)  # this removes trailing slashes as well
-    state_path = join(venv_path, '.venv-update.state')
+    class notlocal(object):
+        venv_path = None
+        pip_args = None
 
-    from os.path import isdir
-    if isdir(venv_path):
-        try:
-            with open(state_path) as state:
-                previous_state = json.load(state)  # due to a coverage bug :pragma:nobranch:
-        except IOError:
-            previous_state = {}
-
-        old_validation = previous_state.get('validation')
-        if old_validation == validation:
-            info('Keeping virtualenv from previous run.')
-            return
+    def adjust_options(options, virtualenv_args):
+        # TODO-TEST: proper error message with no arguments
+        if virtualenv_args:
+            venv_path = notlocal.venv_path = virtualenv_args[0]
         else:
+            venv_path = notlocal.venv_path = DEFAULT_VIRTUALENV_PATH
+            virtualenv_args[:] = [venv_path]
+
+        if venv_path == DEFAULT_VIRTUALENV_PATH or options.prompt == '<dirname>':
+            from os.path import basename, dirname
+            options.prompt = '(%s)' % basename(dirname(venv_path))
+
+        notlocal.pip_args = tuple(virtualenv_args[1:])
+        if not notlocal.pip_args:
+            notlocal.pip_args = ('-r', 'requirements.txt')
+        del virtualenv_args[1:]
+
+        # there are (potentially) *three* python interpreters involved here:
+        # 1) the interpreter we're currently using
+        from sys import executable as current_python
+        # 2) the interpreter we're instructing virtualenv to copy
+        if options.python:
+            source_python = virtualenv.resolve_interpreter(options.python)
+        else:
+            source_python = current_python
+        # 3) the interpreter virtualenv will create
+        destination_python = venv_python(venv_path)
+
+        source_version = get_version(source_python)
+        destination_version = get_version(destination_python)
+
+        if source_version == destination_version:
+            raise SystemExit(0)  # looks good! we're done here.
+
+        if exists(destination_python):
             info('Removing invalidated virtualenv.')
-            info('(%r != %r)' % (validation, old_validation))
-            # TODO: error out if venv_path is nonempty and doesn't look like a virtualenv
             run(('rm', '-rf', venv_path))
 
-    from distutils.spawn import find_executable as which  # pylint:disable=import-error
-    virtualenv = which('virtualenv')
-    run((virtualenv, venv_path,) + venv_args)
+        if not samefile(current_python, source_python):
+            exec_((source_python, dotpy(__file__)) + args)  # never returns
 
-    # see https://bitbucket.org/ned/coveragepy/issues/340/keyerror-subpy#comment-13671053
-    local = join(virtualenv, 'local')
-    if exists(local):  # this is an ubuntu-specific bug :pragma:nocover:
-        run(('rm', '-rf', local))
+    # this is actually a documented extension point:
+    #   http://virtualenv.readthedocs.org/en/latest/reference.html#adjust_options
+    virtualenv.adjust_options = adjust_options
 
-    if isdir(venv_path):
-        with open(state_path, 'w') as state:
-            json.dump(
-                dict(executable=sys.executable, validation=validation),
-                state,
-            )
+    raise_on_failure(virtualenv.main)
+    return notlocal.venv_path, notlocal.pip_args
 
 
 def wait_for_all_subprocesses():
@@ -160,14 +218,8 @@ def wait_for_all_subprocesses():
             raise
 
 
-def mtime_offset(reference, hours_offset):
-    from os.path import getmtime
-    mtime = getmtime(reference)
-
-    return mtime + hours_offset * 60 * 60
-
-
 def touch(filename, timestamp):
+    """set the mtime of a file"""
     if timestamp is not None:
         timestamp = (timestamp, timestamp)  # atime, mtime
 
@@ -180,16 +232,16 @@ def mark_venv_valid(venv_path):
     touch(venv_path, None)
 
 
-def mark_venv_invalid(venv_path, reqs):
+def mark_venv_invalid(venv_path):
     # LBYL, to attempt to avoid any exception during exception handling
     from os.path import isdir
-    if isdir(venv_path) and exists(reqs[0]):
+    if venv_path is not None and isdir(venv_path):
         info('')
         info("Something went wrong! Sending '%s' back in time, so make knows it's invalid." % timid_relpath(venv_path))
         info('Waiting for all subprocesses to finish...')
         wait_for_all_subprocesses()
         info('DONE')
-        touch(venv_path, mtime_offset(reqs[0], -24))
+        touch(venv_path, 0)
         info('')
 
 
@@ -201,7 +253,6 @@ def dotpy(filename):
 
 
 def venv_executable(venv_path, executable):
-    from os.path import join
     return join(venv_path, 'bin', executable)
 
 
@@ -209,33 +260,40 @@ def venv_python(venv_path):
     return venv_executable(venv_path, 'python')
 
 
-def homedir():
-    # TODO-TEST: continues to work well (matches pwd pw_dir) when HOME is unset
-    # TODO-TEST: can be overridden with the HOME variable
-    from os.path import expanduser
-    return expanduser('~')
+class CacheOpts(object):
+
+    def __init__(self):
+        # We put the cache in the directory that pip already uses.
+        # This has better security characteristics than a machine-wide cache, and is a
+        #   pattern people can use for open-source projects
+        self.pipdir = user_cache_dir() + '/pip-faster'
+        # We could combine these caches to one directory, but pip would search everything twice, going slower.
+        self.download_cache = self.pipdir + '/download'
+        self.wheelhouse = self.pipdir + '/wheelhouse'
+
+        self.pip_options = (
+            '--download-cache=' + self.download_cache,
+            '--find-links=file://' + self.wheelhouse,
+        )
 
 
-def venv_update(venv_path, reqs, venv_args):
+def venv_update(args):
     """we have an arbitrary python interpreter active, (possibly) outside the virtualenv we want.
 
     make a fresh venv at the right spot, make sure it has pip-faster, and use it
     """
-    from os.path import abspath
-    venv_path = abspath(venv_path)
-    validate_venv(venv_path, venv_args)
+    exec_intermediate_virtualenv(args)
+    # invariant: virtualenv (the library) is importable
+    # invariant: we're not currently using the destination python
+
+    venv_path, pip_options = ensure_virtualenv(args)
+    # invariant: the final virtualenv exists, with the right python version
+
     python = venv_python(venv_path)
     if not exists(python):
         return 'virtualenv executable not found: %s' % python
 
-    pipdir = homedir() + '/.pip'
-    # We could combine these caches to one directory, but pip would search everything twice, going slower.
-    pip_wheels = pipdir + '/wheelhouse'
-
-    pip_install = (
-        python, '-m', 'pip.__main__', 'install',
-        '--find-links=file://' + pip_wheels,
-    )
+    pip_install = (python, '-m', 'pip.__main__', 'install') + CacheOpts().pip_options
 
     if exists(VENV_UPDATE_REQS_OVERRIDE):
         args = ('-r', VENV_UPDATE_REQS_OVERRIDE)
@@ -244,11 +302,7 @@ def venv_update(venv_path, reqs, venv_args):
 
     # TODO: short-circuit when pip-faster is already there.
     run(pip_install + args)
-
-    run((python, '-m', 'pip_faster', 'install', '--prune', '--upgrade') + sum(
-        [('-r', req) for req in reqs],
-        (),
-    ))
+    run((python, '-m', 'pip_faster', 'install', '--prune', '--upgrade') + pip_options)
 
 
 def raise_on_failure(mainfunc):
@@ -268,14 +322,14 @@ def raise_on_failure(mainfunc):
 
 
 def main():
-    from sys import argv, path
-    del path[:1]  # we don't (want to) import anything from pwd or the script's directory
-    venv_path, reqs, venv_args = parseargs(argv[1:])
+    from sys import argv
+    args = tuple(argv[1:])
+    venv_path = parseargs(args)
 
     try:
-        raise_on_failure(lambda: venv_update(venv_path, reqs, venv_args))
+        raise_on_failure(lambda: venv_update(args))
     except BaseException:
-        mark_venv_invalid(venv_path, reqs)
+        mark_venv_invalid(venv_path)
         raise
     else:
         mark_venv_valid(venv_path)

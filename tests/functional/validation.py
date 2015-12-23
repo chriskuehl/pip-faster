@@ -128,3 +128,27 @@ def test_update_invalidated_while_active(tmpdir):
     assert err == ''
     assert out.startswith('Removing invalidated virtualenv.\n')
     assert 'project-with-c' in pip_freeze()
+
+
+@pytest.mark.usefixtures('pypi_server')
+def it_gives_the_same_python_version_as_we_started_with(tmpdir):
+    python = 'virtualenv_run/bin/python'
+
+    def get_version(outputs):
+        assert '' in outputs
+        return ''.join(outputs)
+
+    with tmpdir.as_cwd():
+        run('virtualenv', '--python', 'python3.3', 'virtualenv_run')
+        initial_version = get_version(run(python, '--version'))
+        assert initial_version.startswith('Python 3.3.')
+
+        requirements('')
+        venv_update_symlink_pwd()
+        out, err = run(python, 'venv_update.py')
+
+        assert err == ''
+        assert out.startswith('Removing invalidated virtualenv.\n')
+
+        final_version = get_version(run(python, '--version'))
+        assert final_version == initial_version
