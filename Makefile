@@ -15,9 +15,9 @@ tox:
 
 .PHONY: venv
 venv: venv-venv_update
-venv-venv_update: requirements.d/*.txt
+venv-venv_update: setup.py requirements.d/* Makefile
 	./venv_update.py --python=python2.7 venv-venv_update -- -r requirements.d/dev.txt
-
+	venv-venv_update/bin/pre-commit install
 
 .PHONY: clean
 clean:
