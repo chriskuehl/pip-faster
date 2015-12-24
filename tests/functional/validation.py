@@ -17,17 +17,17 @@ from testing import venv_update_symlink_pwd
 
 
 def assert_c_extension_runs():
-    out, err = run('virtualenv_run/bin/c-extension-script')
+    out, err = run('venv/bin/c-extension-script')
     assert err == ''
     assert out == 'hello world\n'
 
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && c-extension-script')
+    out, err = run('sh', '-c', '. venv/bin/activate && c-extension-script')
     assert err == ''
     assert out == 'hello world\n'
 
 
 def assert_python_version(version):
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && python --version')
+    out, err = run('sh', '-c', '. venv/bin/activate && python --version')
     assert out == ''
     assert err.startswith(version)
 
@@ -82,12 +82,12 @@ def test_virtualenv_moved(tmpdir):
 @pytest.mark.usefixtures('pypi_server')
 def test_recreate_active_virtualenv(tmpdir):
     with tmpdir.as_cwd():
-        run('virtualenv', '--python', python, 'virtualenv_run')
-        run('virtualenv_run/bin/pip', 'install', '-r', str(TOP / 'requirements.d/coverage.txt'))
+        run('virtualenv', '--python', python, 'venv')
+        run('venv/bin/pip', 'install', '-r', str(TOP / 'requirements.d/coverage.txt'))
 
         requirements('project_with_c')
         venv_update_symlink_pwd()
-        run('virtualenv_run/bin/python', 'venv_update.py')
+        run('venv/bin/python', 'venv_update.py')
 
         assert_c_extension_runs()
 
@@ -104,7 +104,7 @@ def test_update_while_active(tmpdir):
     requirements('project_with_c')
 
     venv_update_symlink_pwd()
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && python venv_update.py')
+    out, err = run('sh', '-c', '. venv/bin/activate && python venv_update.py')
 
     assert err == ''
     assert out.startswith('Keeping virtualenv from previous run.\n')
@@ -123,7 +123,7 @@ def test_update_invalidated_while_active(tmpdir):
     requirements('project-with-c')
 
     venv_update_symlink_pwd()
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && python venv_update.py --system-site-packages')
+    out, err = run('sh', '-c', '. venv/bin/activate && python venv_update.py --system-site-packages')
 
     assert err == ''
     assert out.startswith('Removing invalidated virtualenv.\n')
@@ -132,14 +132,14 @@ def test_update_invalidated_while_active(tmpdir):
 
 @pytest.mark.usefixtures('pypi_server')
 def it_gives_the_same_python_version_as_we_started_with(tmpdir):
-    python = 'virtualenv_run/bin/python'
+    python = 'venv/bin/python'
 
     def get_version(outputs):
         assert '' in outputs
         return ''.join(outputs)
 
     with tmpdir.as_cwd():
-        run('virtualenv', '--python', 'python3.3', 'virtualenv_run')
+        run('virtualenv', '--python', 'python3.3', 'venv')
         initial_version = get_version(run(python, '--version'))
         assert initial_version.startswith('Python 3.3.')
 

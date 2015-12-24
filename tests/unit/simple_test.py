@@ -80,31 +80,6 @@ def test_dotpy(filename, expected):
     assert venv_update.dotpy(filename) == expected
 
 
-@pytest.mark.parametrize('args,expected', [
-    (
-        (),
-        'virtualenv_run',
-    ), (
-        ('a',),
-        'a',
-    ), (
-        ('a', 'b'),
-        'a',
-    ), (
-        ('a', '--opt', 'optval', 'b', 'c', 'd'),
-        'a',
-    ), (
-        ('--opt', 'optval', 'a', 'b', 'c', 'd'),
-        'optval',
-    ), (
-        ('--', '--opt', 'optval', 'a', 'b', 'c', 'd'),
-        'virtualenv_run',
-    ),
-])
-def test_parseargs(args, expected):
-    assert venv_update.parseargs(args) == expected
-
-
 @pytest.mark.parametrize('args', [
     ('-h',),
     ('a', '-h',),
