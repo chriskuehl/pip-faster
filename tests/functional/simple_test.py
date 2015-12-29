@@ -119,7 +119,6 @@ def test_scripts_left_behind(tmpdir):
 def assert_timestamps(*reqs):
     firstreq = Path(reqs[0])
     lastreq = Path(reqs[-1])
-
     args = ['--'] + sum([['-r', req] for req in reqs], [])
 
     venv_update(*args)
@@ -182,6 +181,7 @@ def pipe_output(read, write):
     assert uncolored.startswith('> ')
     # FIXME: Sometimes this is 'python -m', sometimes 'python2.7 -m'. Weird.
     assert uncolored.endswith('''
+> virtualenv --version
 1.11.6
 ''')
 
@@ -249,6 +249,7 @@ def test_wrong_wheel(tmpdir):
     other_python = OtherPython()
     ret2out, _ = venv_update('venv2', '-p' + other_python.interpreter)
 
+    assert other_python.right_tag + '-none-any' in ret2out
     assert other_python.wrong_tag + '-none-any' not in ret2out
 
 

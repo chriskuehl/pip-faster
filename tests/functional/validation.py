@@ -135,7 +135,10 @@ def test_update_invalidated_while_active(tmpdir):
 
     assert err == ''
     out = uncolor(out)
-    assert out.startswith('> virtualenv --system-site-packages\nRemoving invalidated virtualenv.\n')
+    assert out.startswith('''\
+> virtualenv --system-site-packages
+Removing invalidated virtualenv.
+''')
     assert 'project-with-c' in pip_freeze()
 
 
