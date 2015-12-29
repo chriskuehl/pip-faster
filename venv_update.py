@@ -96,8 +96,6 @@ def user_cache_dir():
 
 
 def exec_(cmd):
-    info('exec' + colorize(cmd))
-
     from os import execv
     execv(cmd[0], cmd)  # never returns
 
@@ -126,7 +124,8 @@ def exec_intermediate_virtualenv(args):
         return  # all done!
     else:
         # TODO-TEST: sometimes we would get a stale version of venv-update
-        run(('cp', dotpy(__file__), venv_update))
+        from shutil import copyfile
+        copyfile(dotpy(__file__), venv_update)
         exec_((python, venv_update,) + args)
 
 
@@ -137,6 +136,7 @@ def check_output(cmd):
     if process.returncode:
         raise CalledProcessError(process.returncode, cmd)
     else:
+        assert process.returncode == 0
         return output
 
 
@@ -154,15 +154,34 @@ class notlocal(object):
     pip_options = None
 
 
+def has_system_site_packages(interpreter):
+    # TODO: unit-test
+    system_site_packages = check_output((
+        interpreter,
+        '-c',
+        # stolen directly from virtualenv's site.py
+        """\
+import site, os.path
+print(
+    0
+    if os.path.exists(
+        os.path.join(os.path.dirname(site.__file__), 'no-global-site-packages.txt')
+    ) else
+    1
+)"""
+    ))
+    system_site_packages = int(system_site_packages)
+    assert system_site_packages in (0, 1)
+    return bool(system_site_packages)
+
+
 def ensure_virtualenv(args):
     """Ensure we have a valid virtualenv."""
     def adjust_options(options, virtualenv_args):
         # TODO-TEST: proper error message with no arguments
-        if virtualenv_args:
-            venv_path = notlocal.venv_path = virtualenv_args[0]
-        else:
-            venv_path = notlocal.venv_path = DEFAULT_VIRTUALENV_PATH
-            virtualenv_args[:] = [venv_path]
+        if not virtualenv_args or virtualenv_args[0].startswith('-'):
+            virtualenv_args.insert(0, DEFAULT_VIRTUALENV_PATH)
+        venv_path = notlocal.venv_path = virtualenv_args[0]
 
         if venv_path == DEFAULT_VIRTUALENV_PATH or options.prompt == '<dirname>':
             from os.path import abspath, basename, dirname
@@ -177,6 +196,7 @@ def ensure_virtualenv(args):
             virtualenv_options = args
             notlocal.pip_options = ('-r', 'requirements.txt')
         del virtualenv_args[1:]
+        # end of option munging.
 
         # there are (potentially) *three* python interpreters involved here:
         # 1) the interpreter we're currently using
@@ -189,15 +209,26 @@ def ensure_virtualenv(args):
         # 3) the interpreter virtualenv will create
         destination_python = venv_python(venv_path)
 
-        source_version = get_python_version(source_python)
-        destination_version = get_python_version(destination_python)
-
-        if source_version == destination_version:
-            raise SystemExit(0)  # looks good! we're done here.
+        if options.clear and exists(destination_python):  # the implementation in virtualenv is bogus.
+            run(('rm', '-rf', venv_path))
 
         if exists(destination_python):
-            info('Removing invalidated virtualenv.')
-            run(('rm', '-rf', venv_path))
+            source_version = get_python_version(source_python)
+            destination_version = get_python_version(destination_python)
+            # TODO: unit-test this:
+            orig_venv_path = check_output(('sh', '-c', '. %s; printf "$VIRTUAL_ENV"' % venv_executable(venv_path, 'activate')))
+
+            if (
+                    samefile(orig_venv_path, venv_path) and
+                    has_system_site_packages(destination_python) == options.system_site_packages and
+                    source_version == destination_version
+            ):
+                info('Keeping valid virtualenv from previous run.')
+                raise SystemExit(0)  # looks good! we're done here.
+            else:
+                # TODO: say exactly *why* the venv was invalidated
+                info('Removing invalidated virtualenv.')
+                run(('rm', '-rf', venv_path))
 
         if not samefile(current_python, source_python):
             exec_((source_python, dotpy(__file__)) + args)  # never returns
@@ -207,7 +238,7 @@ def ensure_virtualenv(args):
     import virtualenv
     virtualenv.adjust_options = adjust_options
 
-    info('calling virtualenv...')
+    info(colorize(('virtualenv',) + args))
     raise_on_failure(virtualenv.main)
 
 

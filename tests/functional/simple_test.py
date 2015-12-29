@@ -8,6 +8,7 @@ import pytest
 from py._path.local import LocalPath as Path
 
 from testing import enable_coverage
+from testing import OtherPython
 from testing import pip_freeze
 from testing import requirements
 from testing import run
@@ -39,7 +40,7 @@ def test_install_custom_path_and_requirements(tmpdir):
     )
     enable_coverage(tmpdir, 'venv2')
     venv_update('venv2', '--', '-r', 'requirements2.txt')
-    assert pip_freeze('venv') == '\n'.join((
+    assert pip_freeze('venv2') == '\n'.join((
         'pip-faster==' + __version__,
         'six==1.8.0',
         'virtualenv==1.11.6',
@@ -53,21 +54,14 @@ def test_arguments_version(tmpdir):
     """Show that we can pass arguments through to virtualenv"""
     tmpdir.chdir()
 
-    from subprocess import CalledProcessError
-    with pytest.raises(CalledProcessError) as excinfo:
-        # should show virtualenv version, then crash
-        venv_update('--version')
+    # should show virtualenv version, successfully
+    out, err = venv_update('--version')
+    assert err == ''
 
-    assert excinfo.value.returncode == 1
-    out, err = excinfo.value.result
-    err = strip_coverage_warnings(err)
-    lasterr = err.rsplit('\n', 2)[-2]
-    assert lasterr.startswith('virtualenv executable not found: /'), err
-    assert lasterr.endswith('/venv/bin/python'), err
-
-    lines = [uncolor(line) for line in out.split('\n')]
-    assert len(lines) == 3, lines
-    assert lines[0].endswith('/virtualenv venv --version'), repr(lines[0])
+    out = uncolor(out)
+    lines = out.splitlines()
+    assert len(lines) == 13, repr(lines)
+    assert lines[-2] == '> virtualenv --version', repr(lines)
 
 
 @pytest.mark.usefixtures('pypi_server')
@@ -126,7 +120,9 @@ def assert_timestamps(*reqs):
     firstreq = Path(reqs[0])
     lastreq = Path(reqs[-1])
 
-    venv_update(*reqs)
+    args = ['--'] + sum([['-r', req] for req in reqs], [])
+
+    venv_update(*args)
 
     assert firstreq.mtime() < Path('venv').mtime()
 
@@ -135,7 +131,7 @@ def assert_timestamps(*reqs):
 
     from subprocess import CalledProcessError
     with pytest.raises(CalledProcessError) as excinfo:
-        venv_update(*reqs)
+        venv_update(*args)
 
     assert excinfo.value.returncode == 2
     assert firstreq.mtime() > Path('venv').mtime()
@@ -143,15 +139,15 @@ def assert_timestamps(*reqs):
     # blank requirements should succeed
     lastreq.write('')
 
-    venv_update(*reqs)
-    assert Path(reqs[0]).mtime() < Path('venv').mtime()
+    venv_update(*args)
+    assert firstreq.mtime() < Path('venv').mtime()
 
 
 @pytest.mark.usefixtures('pypi_server')
 def test_timestamps_single(tmpdir):
     tmpdir.chdir()
     requirements('')
-    assert_timestamps('--', '-r', 'requirements.txt')
+    assert_timestamps('requirements.txt')
 
 
 @pytest.mark.usefixtures('pypi_server')
@@ -159,7 +155,7 @@ def test_timestamps_multiple(tmpdir):
     tmpdir.chdir()
     requirements('')
     Path('requirements2.txt').write('')
-    assert_timestamps('--', '-r', 'requirements.txt', '-r', 'requirements2.txt')
+    assert_timestamps('requirements.txt', 'requirements2.txt')
 
 
 def pipe_output(read, write):
@@ -186,7 +182,6 @@ def pipe_output(read, write):
     assert uncolored.startswith('> ')
     # FIXME: Sometimes this is 'python -m', sometimes 'python2.7 -m'. Weird.
     assert uncolored.endswith('''
-calling virtualenv...
 1.11.6
 ''')
 
@@ -220,6 +215,7 @@ def test_uncolored_pipe(tmpdir):
     assert out == uncolored
 
 
+@pytest.mark.usefixtures('pypi_server')
 def test_args_backward(tmpdir):
     tmpdir.chdir()
     requirements('')
@@ -246,13 +242,14 @@ def test_wrong_wheel(tmpdir):
     tmpdir.chdir()
 
     requirements('')
-    venv_update('venv1', '-ppython2.7')
+    venv_update('venv1')
     # A different python
     # Before fixing, this would install argparse using the `py2-none-any`
     # wheel, even on py3
-    ret2out, _ = venv_update('venv2', '-ppython3.3')
+    other_python = OtherPython()
+    ret2out, _ = venv_update('venv2', '-p' + other_python.interpreter)
 
-    assert 'py2-none-any' not in ret2out
+    assert other_python.wrong_tag + '-none-any' not in ret2out
 
 
 def flake8_older():
@@ -347,6 +344,7 @@ pure_python_package
     out = uncolor(out)
     assert ' '.join((
         '\n> venv/bin/python -m pip.__main__ install',
+        '--download-cache=%s/home/.cache/pip-faster/download' % tmpdir,
         '--find-links=file://%s/home/.cache/pip-faster/wheelhouse' % tmpdir,
         '-r requirements.d/venv-update.txt\n',
     )) in out

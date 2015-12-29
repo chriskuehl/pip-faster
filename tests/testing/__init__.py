@@ -87,7 +87,8 @@ def strip_coverage_warnings(stderr):
 def uncolor(text):
     # the colored_tty, uncolored_pipe tests cover this pretty well.
     from re import sub
-    return sub('\033\\[[^A-z]*[A-z]', '', text)
+    text = sub('\033\\[[^A-z]*[A-z]', '', text)
+    return sub('[^\n\r]*\r', '', text)
 
 
 def pip_freeze(venv='venv'):
@@ -112,3 +113,18 @@ def enable_coverage(tmpdir, venv='venv', options=()):
     venv_update(str(venv), *options)
 
     return venv
+
+
+class OtherPython(object):
+    """represents a python interpreter that doesn't match the "current" interpreter's version"""
+
+    def __init__(self):
+        import sys
+        if sys.version_info[0] <= 2:
+            self.interpreter = 'python3.4'
+            self.version_prefix = '3.4.'
+            self.wrong_tag = 'py2'
+        else:
+            self.interpreter = 'python2.6'
+            self.version_prefix = '2.6.'
+            self.wrong_tag = 'py3'
