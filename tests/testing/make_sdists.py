@@ -1,8 +1,14 @@
 #!/usr/bin/env python
+"""
+Build a collection of packages, to be used as a pytest fixture.
+
+This script is reentrant IFF the destinations are not shared.
+"""
 from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from subprocess import check_call
 from sys import executable as python
 
 
@@ -13,23 +19,35 @@ def info(*msg):
     stdout.flush()
 
 
-def random_string():
-    """return a short suffix that shouldn't collide with any subsequent calls"""
-    import os
-    import base64
+def make_copy(setuppy, dst):
+    pkg = setuppy.dirpath().basename
 
-    return '.'.join((
-        str(os.getpid()),
-        base64.urlsafe_b64encode(os.urandom(3)).decode('US-ASCII'),
-    ))
+    # unlike sdist, egg-info is reentrant-safe
+    check_call(
+        (python, 'setup.py', '--quiet', 'egg_info'),
+        cwd=setuppy.dirname,
+    )
+
+    from glob import glob
+    sources = setuppy.dirpath().join('*/SOURCES.txt')
+    sources, = glob(str(sources))
+    sources = open(sources).read().splitlines()
+
+    copy = dst.join('src', pkg).ensure(dir=True)
+    for source in sources:
+        source = setuppy.dirpath().join(source)
+        dest = copy.join(source.relto(setuppy))
+        dest.dirpath().ensure(dir=True)
+        source.copy(dest)
+    return copy
 
 
 def sdist(setuppy, dst):
-    import subprocess
     info('sdist', setuppy.dirpath().basename)
-    subprocess.check_call(
+    copy = make_copy(setuppy, dst)
+    check_call(
         (python, 'setup.py', '--quiet', 'sdist', '--dist-dir', str(dst)),
-        cwd=setuppy.dirname,
+        cwd=str(copy),
     )
 
 
@@ -39,7 +57,8 @@ def build_one(src, dst):
         sdist(setuppy, dst)
 
         if src.join('wheelme').exists():
-            wheel(src, dst)
+            copy = make_copy(setuppy, dst)
+            wheel(copy, dst)
 
         return True
 
@@ -53,16 +72,6 @@ def build_all(sources, dst):
                 continue
 
             build_one(source, dst)
-
-
-def flock(path):
-    import os
-    fd = os.open(path, os.O_CREAT)
-
-    import fcntl
-    fcntl.flock(fd, fcntl.LOCK_EX)  # exclusive
-
-    return fd
 
 
 class public_pypi_enabled(object):
@@ -79,56 +88,42 @@ class public_pypi_enabled(object):
 
 
 def wheel(src, dst):
-    import subprocess
     info('wheel', src)
 
     with public_pypi_enabled():
-        subprocess.check_call(
-            (python, '-m', 'pip.__main__', 'wheel', '--quiet', '--wheel-dir', str(dst), str(src)),
-        )
+        build = dst.join('build')
+        check_call((
+            python, '-m', 'pip.__main__',
+            'wheel',
+            '--quiet',
+            '--build-dir', str(build),
+            '--wheel-dir', str(dst),
+            str(src)
+        ))
+        build.remove()  # pip1.5 wheel doesn't clean up its build =/
 
 
 def download_sdist(source, destination):
-    import subprocess
     info('download sdist', source)
     with public_pypi_enabled():
-        subprocess.check_call((
+        check_call((
             python, '-m', 'pip.__main__',
             'install',
             '--quiet',
             '--no-deps',
             '--no-use-wheel',
-            '-d', str(destination),
+            '--build-dir', str(destination.join('build')),
+            '--download', str(destination),
             str(source),
         ))
 
 
 def make_sdists(sources, destination):
-    destination.dirpath().ensure(dir=True)
-
-    lock = destination.new(ext='lock')
-    flock(lock.strpath)
-
-    staging = destination.new(ext=random_string() + '.tmp')
-    staging.ensure(dir=True)
-
-    build_all(sources, staging)
-    wheel('argparse', staging)
-    wheel('coverage-enable-subprocess', staging)
-    download_sdist('coverage', staging)
-    download_sdist('coverage-enable-subprocess', staging)
-
-    if destination.islink():
-        old = destination.readlink()
-    else:
-        old = None
-
-    link = staging.new(ext='ln')
-    link.mksymlinkto(staging, absolute=False)
-    link.rename(destination)
-
-    if old is not None:
-        destination.dirpath(old).remove()
+    build_all(sources, destination)
+    wheel('argparse', destination)
+    wheel('coverage-enable-subprocess', destination)
+    download_sdist('coverage', destination)
+    download_sdist('coverage-enable-subprocess', destination)
 
 
 def main():
