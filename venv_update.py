@@ -114,9 +114,8 @@ def exec_intermediate_virtualenv(args):
 
     if not exists(python):
         run(('virtualenv', intermediate_virtualenv))
-    if not exists(join(scratch, 'virtualenv.py')):
-        # TODO: do we allow user-defined override of which version of virtualenv to use?
-        run(('pip', 'install', '--target', scratch, 'virtualenv'))
+        # TODO: do we allow user-defined override of which version of virtualenv to install?
+        run((venv_python(intermediate_virtualenv), '-m', 'pip.__main__', 'install', 'virtualenv'))
 
     venv_update = join(scratch, 'venv-update')
     if samefile(dotpy(__file__), venv_update):
