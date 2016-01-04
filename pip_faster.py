@@ -41,6 +41,7 @@ from venv_update import timid_relpath
 if True:  # :pragma:nocover:pylint:disable=using-constant-test
     # Debian de-vendorizes the version of pip it ships
     try:
+        # pylint:disable=ungrouped-imports
         from pip._vendor import pkg_resources
     except ImportError:
         import pkg_resources
@@ -415,7 +416,6 @@ class FasterInstallCommand(InstallCommand):
         """update install options with caching values"""
         cache_opts = CacheOpts()
         options.find_links.append('file://' + cache_opts.wheelhouse)
-        options.download_cache = cache_opts.download_cache
 
         # from pip.commands.wheel: make the wheelhouse
         import os.path

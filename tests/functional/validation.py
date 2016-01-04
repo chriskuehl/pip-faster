@@ -7,29 +7,35 @@ from sys import executable as python
 import pytest
 
 from testing import enable_coverage
+from testing import OtherPython
 from testing import Path
 from testing import pip_freeze
 from testing import requirements
 from testing import run
 from testing import TOP
+from testing import uncolor
 from testing import venv_update
 from testing import venv_update_symlink_pwd
 
 
 def assert_c_extension_runs():
-    out, err = run('virtualenv_run/bin/c-extension-script')
+    out, err = run('venv/bin/c-extension-script')
     assert err == ''
     assert out == 'hello world\n'
 
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && c-extension-script')
+    out, err = run('sh', '-c', '. venv/bin/activate && c-extension-script')
     assert err == ''
     assert out == 'hello world\n'
 
 
 def assert_python_version(version):
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && python --version')
-    assert out == ''
-    assert err.startswith(version)
+    outputs = run('sh', '-c', '. venv/bin/activate && python -c "import sys; print(sys.version)"')
+
+    # older versions of python output on stderr, newer on stdout, but we dont care too much which
+    assert '' in outputs
+    actual_version = ''.join(outputs)
+    assert actual_version.startswith(version)
+    return actual_version
 
 
 @pytest.mark.usefixtures('pypi_server')
@@ -41,17 +47,19 @@ def test_python_versions(tmpdir):
         enable_coverage(tmpdir, options=options)
         venv_update(*options)
 
-    run_with_coverage('--python=python2.6')
+    other_python = OtherPython()
+    run_with_coverage('--python=' + other_python.interpreter)
     assert_c_extension_runs()
-    assert_python_version('Python 2.6')
+    assert_python_version(other_python.version_prefix)
 
-    run_with_coverage('--python=python2.7')
+    run_with_coverage()
     assert_c_extension_runs()
-    assert_python_version('Python 2.7')
+    from sys import version
+    assert_python_version(version)
 
-    run_with_coverage('--python=python2.6')
+    run_with_coverage('--python=' + other_python.interpreter)
     assert_c_extension_runs()
-    assert_python_version('Python 2.6')
+    assert_python_version(other_python.version_prefix)
 
 
 @pytest.mark.usefixtures('pypi_server')
@@ -82,12 +90,12 @@ def test_virtualenv_moved(tmpdir):
 @pytest.mark.usefixtures('pypi_server')
 def test_recreate_active_virtualenv(tmpdir):
     with tmpdir.as_cwd():
-        run('virtualenv', '--python', python, 'virtualenv_run')
-        run('virtualenv_run/bin/pip', 'install', '-r', str(TOP / 'requirements.d/coverage.txt'))
+        run('virtualenv', '--python', python, 'venv')
+        run('venv/bin/pip', 'install', '-r', str(TOP / 'requirements.d/coverage.txt'))
 
         requirements('project_with_c')
         venv_update_symlink_pwd()
-        run('virtualenv_run/bin/python', 'venv_update.py')
+        run('venv/bin/python', 'venv_update.py')
 
         assert_c_extension_runs()
 
@@ -104,7 +112,7 @@ def test_update_while_active(tmpdir):
     requirements('project_with_c')
 
     venv_update_symlink_pwd()
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && python venv_update.py')
+    out, err = run('sh', '-c', '. venv/bin/activate && python venv_update.py')
 
     assert err == ''
     assert out.startswith('Keeping virtualenv from previous run.\n')
@@ -123,32 +131,30 @@ def test_update_invalidated_while_active(tmpdir):
     requirements('project-with-c')
 
     venv_update_symlink_pwd()
-    out, err = run('sh', '-c', '. virtualenv_run/bin/activate && python venv_update.py --system-site-packages')
+    out, err = run('sh', '-c', '. venv/bin/activate && python venv_update.py --system-site-packages')
 
     assert err == ''
-    assert out.startswith('Removing invalidated virtualenv.\n')
+    out = uncolor(out)
+    assert out.startswith('''\
+> virtualenv --system-site-packages
+Removing invalidated virtualenv.
+''')
     assert 'project-with-c' in pip_freeze()
 
 
 @pytest.mark.usefixtures('pypi_server')
 def it_gives_the_same_python_version_as_we_started_with(tmpdir):
-    python = 'virtualenv_run/bin/python'
-
-    def get_version(outputs):
-        assert '' in outputs
-        return ''.join(outputs)
-
+    other_python = OtherPython()
     with tmpdir.as_cwd():
-        run('virtualenv', '--python', 'python3.3', 'virtualenv_run')
-        initial_version = get_version(run(python, '--version'))
-        assert initial_version.startswith('Python 3.3.')
+        run('virtualenv', '--python', other_python.interpreter, 'venv')
+        initial_version = assert_python_version(other_python.version_prefix)
 
         requirements('')
         venv_update_symlink_pwd()
-        out, err = run(python, 'venv_update.py')
+        out, err = run('./venv/bin/python', 'venv_update.py')
 
         assert err == ''
         assert out.startswith('Removing invalidated virtualenv.\n')
 
-        final_version = get_version(run(python, '--version'))
+        final_version = assert_python_version(other_python.version_prefix)
         assert final_version == initial_version

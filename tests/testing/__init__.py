@@ -57,7 +57,7 @@ def venv_update_symlink_pwd():
     local_vu.mksymlinkto(venv_update_path)
 
 
-def venv_update_script(pyscript, venv='virtualenv_run'):
+def venv_update_script(pyscript, venv='venv'):
     """Run a python script that imports venv_update"""
 
     # symlink so that we get coverage, where possible
@@ -84,13 +84,28 @@ def strip_coverage_warnings(stderr):
     return coverage_warnings_regex.sub('', stderr)
 
 
+pip_warnings_regex = Regex(
+    r'^Coverage.py warning: (%s)\n' % '|'.join((
+        r'Module .* was never imported\.',
+        r'No data was collected\.',
+        r'Module venv_update was previously imported, but not measured\.',
+    )),
+    flags=MULTILINE,
+)
+
+
+def strip_pip_warnings(stderr):
+    return pip_warnings_regex.sub('', stderr)
+
+
 def uncolor(text):
     # the colored_tty, uncolored_pipe tests cover this pretty well.
     from re import sub
-    return sub('\033\\[[^A-z]*[A-z]', '', text)
+    text = sub('\033\\[[^A-z]*[A-z]', '', text)
+    return sub('[^\n\r]*\r', '', text)
 
 
-def pip_freeze(venv='virtualenv_run'):
+def pip_freeze(venv='venv'):
     from os.path import join
     out, err = run(join(venv, 'bin', 'pip'), 'freeze', '--local')
 
@@ -106,9 +121,26 @@ def pip_freeze(venv='virtualenv_run'):
     return out
 
 
-def enable_coverage(tmpdir, venv='virtualenv_run', options=()):
+def enable_coverage(tmpdir, venv='venv', options=()):
     venv = tmpdir.join(venv)
     options += ('--', '-r', str(COVERAGE_REQUIREMENTS))
     venv_update(str(venv), *options)
 
     return venv
+
+
+class OtherPython(object):
+    """represents a python interpreter that doesn't match the "current" interpreter's version"""
+
+    def __init__(self):
+        import sys
+        if sys.version_info[0] <= 2:
+            self.interpreter = 'python3.4'
+            self.version_prefix = '3.4.'
+            self.right_tag = 'py3'
+            self.wrong_tag = 'py2'
+        else:
+            self.interpreter = 'python2.6'
+            self.version_prefix = '2.6.'
+            self.right_tag = 'py2'
+            self.wrong_tag = 'py3'

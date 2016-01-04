@@ -11,7 +11,7 @@ To set the index server, export a PIP_INDEX_URL variable.
     See also: https://pip.readthedocs.org/en/stable/user_guide/#environment-variables
 
 positional arguments:
-  virtualenv_dir  Destination virtualenv directory (default: virtualenv_run)
+  virtualenv_dir  Destination virtualenv directory (default: venv)
   requirements    Requirements files. (default: requirements.txt)
 
 optional arguments:
@@ -26,7 +26,7 @@ from __future__ import unicode_literals
 from os.path import exists
 from os.path import join
 
-DEFAULT_VIRTUALENV_PATH = 'virtualenv_run'
+DEFAULT_VIRTUALENV_PATH = 'venv'
 VENV_UPDATE_REQS_OVERRIDE = 'requirements.d/venv-update.txt'
 __version__ = '1.0rc2.dev1'
 
@@ -35,20 +35,10 @@ __version__ = '1.0rc2.dev1'
 
 
 def parseargs(args):
-    """extremely rudimentary arg parsing, to handle --help and find the virtualenv path"""
+    """extremely rudimentary arg parsing to handle --help"""
     if set(args) & set(('-h', '--help')):
         print(__doc__, end='')
         exit(0)
-
-    for arg in args:
-        if arg == '--':
-            break
-        elif arg.startswith('-'):
-            continue
-        else:
-            return arg
-
-    return DEFAULT_VIRTUALENV_PATH
 
 
 def timid_relpath(arg):
@@ -106,30 +96,47 @@ def user_cache_dir():
 
 
 def exec_(cmd):
-    info('exec' + colorize(cmd))
-
     from os import execv
     execv(cmd[0], cmd)  # never returns
 
 
 def exec_intermediate_virtualenv(args):
-    scratch = join(user_cache_dir(), 'venv-update')
+    """
+    goals:
+        - get any random site-packages off of the pythonpath
+        - ensure that virtuualenv is always importable
+        - ensure that we're not using the interpreter that we may need to delete
+        - idempotency: do nothing if the above goals are already met
+    """
+    scratch = join(user_cache_dir(), 'venv-update', __version__)
     intermediate_virtualenv = join(scratch, 'venv')
     python = venv_python(intermediate_virtualenv)
 
     if not exists(python):
         run(('virtualenv', intermediate_virtualenv))
-    if not exists(join(scratch, 'virtualenv.py')):
-        run(('pip', 'install', '--target', scratch, 'virtualenv'))
+        # TODO: do we allow user-defined override of which version of virtualenv to install?
+        run((venv_python(intermediate_virtualenv), '-m', 'pip.__main__', 'install', 'virtualenv'))
 
     venv_update = join(scratch, 'venv-update')
-    if not exists(venv_update):
-        run(('cp', dotpy(__file__), venv_update))
-
     if samefile(dotpy(__file__), venv_update):
+        # TODO-TEST: the original venv-update's directory was on sys.path (when using symlinking)
         return  # all done!
     else:
+        # TODO-TEST: sometimes we would get a stale version of venv-update
+        from shutil import copyfile
+        copyfile(dotpy(__file__), venv_update)
         exec_((python, venv_update,) + args)
+
+
+def check_output(cmd):
+    from subprocess import Popen, PIPE, CalledProcessError
+    process = Popen(cmd, stdout=PIPE)
+    output, _ = process.communicate()
+    if process.returncode:
+        raise CalledProcessError(process.returncode, cmd)
+    else:
+        assert process.returncode == 0
+        return output
 
 
 def get_python_version(interpreter):
@@ -137,40 +144,47 @@ def get_python_version(interpreter):
         return None
 
     cmd = (interpreter, '-c', 'import sys; print(sys.version)')
-
-    from subprocess import Popen, PIPE, CalledProcessError
-    interpreter = Popen(cmd, stdout=PIPE)
-    output, _ = interpreter.communicate()
-    if interpreter.returncode:
-        raise CalledProcessError(interpreter.returncode, cmd)
-    else:
-        return output
+    return check_output(cmd)
 
 
-# SMELL: global mutables :(
-class notlocal(object):
-    venv_path = None
-    pip_options = None
+def has_system_site_packages(interpreter):
+    # TODO: unit-test
+    system_site_packages = check_output((
+        interpreter,
+        '-c',
+        # stolen directly from virtualenv's site.py
+        """\
+import site, os.path
+print(
+    0
+    if os.path.exists(
+        os.path.join(os.path.dirname(site.__file__), 'no-global-site-packages.txt')
+    ) else
+    1
+)"""
+    ))
+    system_site_packages = int(system_site_packages)
+    assert system_site_packages in (0, 1)
+    return bool(system_site_packages)
 
 
-def ensure_virtualenv(args):
+def ensure_virtualenv(args, return_values):
     """Ensure we have a valid virtualenv."""
     def adjust_options(options, virtualenv_args):
         # TODO-TEST: proper error message with no arguments
-        if virtualenv_args:
-            venv_path = notlocal.venv_path = virtualenv_args[0]
-        else:
-            venv_path = notlocal.venv_path = DEFAULT_VIRTUALENV_PATH
-            virtualenv_args[:] = [venv_path]
+        if not virtualenv_args or virtualenv_args[0].startswith('-'):
+            virtualenv_args.insert(0, DEFAULT_VIRTUALENV_PATH)
+        venv_path = return_values.venv_path = virtualenv_args[0]
 
         if venv_path == DEFAULT_VIRTUALENV_PATH or options.prompt == '<dirname>':
-            from os.path import basename, dirname
-            options.prompt = '(%s)' % basename(dirname(venv_path))
+            from os.path import abspath, basename, dirname
+            options.prompt = '(%s)' % basename(dirname(abspath(venv_path)))
 
-        notlocal.pip_options = tuple(virtualenv_args[1:])
-        if not notlocal.pip_options:
-            notlocal.pip_options = ('-r', 'requirements.txt')
+        return_values.pip_options = tuple(virtualenv_args[1:])
+        if not return_values.pip_options:
+            return_values.pip_options = ('-r', 'requirements.txt')
         del virtualenv_args[1:]
+        # end of option munging.
 
         # there are (potentially) *three* python interpreters involved here:
         # 1) the interpreter we're currently using
@@ -183,15 +197,26 @@ def ensure_virtualenv(args):
         # 3) the interpreter virtualenv will create
         destination_python = venv_python(venv_path)
 
-        source_version = get_python_version(source_python)
-        destination_version = get_python_version(destination_python)
-
-        if source_version == destination_version:
-            raise SystemExit(0)  # looks good! we're done here.
+        if options.clear and exists(destination_python):  # the implementation in virtualenv is bogus.
+            run(('rm', '-rf', venv_path))
 
         if exists(destination_python):
-            info('Removing invalidated virtualenv.')
-            run(('rm', '-rf', venv_path))
+            source_version = get_python_version(source_python)
+            destination_version = get_python_version(destination_python)
+            # TODO: unit-test this:
+            orig_venv_path = check_output(('sh', '-c', '. %s; printf "$VIRTUAL_ENV"' % venv_executable(venv_path, 'activate')))
+
+            if (
+                    samefile(orig_venv_path, venv_path) and
+                    has_system_site_packages(destination_python) == options.system_site_packages and
+                    source_version == destination_version
+            ):
+                info('Keeping valid virtualenv from previous run.')
+                raise SystemExit(0)  # looks good! we're done here.
+            else:
+                # TODO: say exactly *why* the venv was invalidated
+                info('Removing invalidated virtualenv.')
+                run(('rm', '-rf', venv_path))
 
         if not samefile(current_python, source_python):
             exec_((source_python, dotpy(__file__)) + args)  # never returns
@@ -201,6 +226,7 @@ def ensure_virtualenv(args):
     import virtualenv
     virtualenv.adjust_options = adjust_options
 
+    info(colorize(('virtualenv',) + args))
     raise_on_failure(virtualenv.main)
 
 
@@ -233,7 +259,7 @@ def mark_venv_valid(venv_path):
 def mark_venv_invalid(venv_path):
     # LBYL, to attempt to avoid any exception during exception handling
     from os.path import isdir
-    if isdir(venv_path):
+    if venv_path and isdir(venv_path):
         info('')
         info("Something went wrong! Sending '%s' back in time, so make knows it's invalid." % timid_relpath(venv_path))
         wait_for_all_subprocesses()
@@ -263,11 +289,9 @@ class CacheOpts(object):
         #   pattern people can use for open-source projects
         self.pipdir = user_cache_dir() + '/pip-faster'
         # We could combine these caches to one directory, but pip would search everything twice, going slower.
-        self.download_cache = self.pipdir + '/download'
         self.wheelhouse = self.pipdir + '/wheelhouse'
 
         self.pip_options = (
-            '--download-cache=' + self.download_cache,
             '--find-links=file://' + self.wheelhouse,
         )
 
@@ -281,20 +305,25 @@ def venv_update(args):
     # invariant: virtualenv (the library) is importable
     # invariant: we're not currently using the destination python
 
-    ensure_virtualenv(args)
-    if notlocal.venv_path is None:
-        return
+    # FIXME: this is pretty gross.
+    class return_values(object):
+        venv_path = None
+        pip_options = None
 
     try:
-        raise_on_failure(lambda: do_update(notlocal.venv_path, notlocal.pip_options))
+        ensure_virtualenv(args, return_values)
+        if return_values.venv_path is None:
+            return
+        raise_on_failure(lambda: pip_faster(return_values.venv_path, return_values.pip_options))
     except BaseException:
-        mark_venv_invalid(notlocal.venv_path)
+        mark_venv_invalid(return_values.venv_path)
         raise
     else:
-        mark_venv_valid(notlocal.venv_path)
+        mark_venv_valid(return_values.venv_path)
 
 
-def do_update(venv_path, pip_options):
+def pip_faster(venv_path, pip_options):
+    """install and run pip-faster"""
     python = venv_python(venv_path)
     if not exists(python):
         return 'virtualenv executable not found: %s' % python
@@ -306,6 +335,10 @@ def do_update(venv_path, pip_options):
         args = ('-r', VENV_UPDATE_REQS_OVERRIDE)
     else:
         args = ('pip-faster==' + __version__,)
+
+    # silence a couple noisy warnings FIXME: ensure a "true SSLContext" is available
+    from os import environ
+    environ['PIP_DISABLE_PIP_VERSION_CHECK'] = '1'
 
     # TODO: short-circuit when pip-faster is already there.
     run(pip_install + args)
@@ -331,6 +364,7 @@ def raise_on_failure(mainfunc):
 def main():
     from sys import argv
     args = tuple(argv[1:])
+    parseargs(args)
     return venv_update(args)
 
 
