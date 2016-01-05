@@ -36,6 +36,7 @@ __version__ = '1.0rc2.dev1'
 
 def parseargs(args):
     """extremely rudimentary arg parsing to handle --help"""
+    # TODO: show venv-update's version on -V/--version
     if set(args) & set(('-h', '--help')):
         print(__doc__, end='')
         exit(0)
@@ -95,37 +96,53 @@ def user_cache_dir():
     return getenv('XDG_CACHE_HOME', expanduser('~/.cache'))
 
 
-def exec_(cmd):
+def exec_(argv):  # never returns
+    """Wrapper to os.execv which shows the command and runs any atexit handlers (for coverage's sake).
+    Like os.execv, this function never returns.
+    """
+    ## info('EXEC' + colorize(argv))  # TODO: debug logging by environment variable
+
+    # in python3, sys.exitfunc has gone away, and atexit._run_exitfuncs seems to be the only pubic-ish interface
+    #   https://hg.python.org/cpython/file/3.4/Modules/atexitmodule.c#l289
+    import atexit
+    atexit._run_exitfuncs()  # pylint:disable=protected-access
+
     from os import execv
-    execv(cmd[0], cmd)  # never returns
+    execv(argv[0], argv)
 
 
-def exec_intermediate_virtualenv(args):
+def exec_scratch_virtualenv(args):
     """
     goals:
         - get any random site-packages off of the pythonpath
-        - ensure that virtuualenv is always importable
+        - ensure that virtualenv is always importable
         - ensure that we're not using the interpreter that we may need to delete
         - idempotency: do nothing if the above goals are already met
     """
     scratch = join(user_cache_dir(), 'venv-update', __version__)
-    intermediate_virtualenv = join(scratch, 'venv')
-    python = venv_python(intermediate_virtualenv)
+    scratch_virtualenv = join(scratch, 'venv')
+    python = venv_python(scratch_virtualenv)
+    venv_update = join(scratch, 'venv-update')
 
     if not exists(python):
-        run(('virtualenv', intermediate_virtualenv))
-    if not exists(join(scratch, 'virtualenv.py')):
-        # TODO: do we allow user-defined override of which version of virtualenv to use?
-        run(('pip', 'install', '--target', scratch, 'virtualenv'))
+        run(('virtualenv', scratch_virtualenv))
+        scratch_python = venv_python(scratch_virtualenv)
+        # TODO: do we allow user-defined override of which version of virtualenv to install?
+        run((scratch_python, '-m', 'pip.__main__', 'install', 'virtualenv'))
 
-    venv_update = join(scratch, 'venv-update')
+        site_packages = check_output((scratch_python, '-c', 'import distutils.sysconfig as s; print(s.get_python_lib())')).strip()
+        venv_update_library = join(site_packages, 'venv_update.py')
+        from shutil import copyfile
+        copyfile(dotpy(__file__), venv_update_library)
+        from os import symlink
+        symlink(venv_update_library, venv_update)
+
+    assert exists(venv_update), venv_update
     if samefile(dotpy(__file__), venv_update):
         # TODO-TEST: the original venv-update's directory was on sys.path (when using symlinking)
         return  # all done!
     else:
         # TODO-TEST: sometimes we would get a stale version of venv-update
-        from shutil import copyfile
-        copyfile(dotpy(__file__), venv_update)
         exec_((python, venv_update,) + args)
 
 
@@ -175,7 +192,7 @@ print(
     return bool(system_site_packages)
 
 
-def ensure_virtualenv(args):
+def ensure_virtualenv(args):   # FIXME!: too complex.
     """Ensure we have a valid virtualenv."""
     def adjust_options(options, virtualenv_args):
         # TODO-TEST: proper error message with no arguments
@@ -202,10 +219,10 @@ def ensure_virtualenv(args):
         # 1) the interpreter we're currently using
         from sys import executable as current_python
         # 2) the interpreter we're instructing virtualenv to copy
-        if options.python:
-            source_python = virtualenv.resolve_interpreter(options.python)
+        if options.python is None:
+            source_python = None
         else:
-            source_python = current_python
+            source_python = virtualenv.resolve_interpreter(options.python)
         # 3) the interpreter virtualenv will create
         destination_python = venv_python(venv_path)
 
@@ -213,24 +230,35 @@ def ensure_virtualenv(args):
             run(('rm', '-rf', venv_path))
 
         if exists(destination_python):
-            source_version = get_python_version(source_python)
-            destination_version = get_python_version(destination_python)
             # TODO: unit-test this:
             orig_venv_path = check_output(('sh', '-c', '. %s; printf "$VIRTUAL_ENV"' % venv_executable(venv_path, 'activate')))
 
             if (
                     samefile(orig_venv_path, venv_path) and
-                    has_system_site_packages(destination_python) == options.system_site_packages and
-                    source_version == destination_version
+                    has_system_site_packages(destination_python) == options.system_site_packages
             ):
-                info('Keeping valid virtualenv from previous run.')
-                raise SystemExit(0)  # looks good! we're done here.
-            else:
-                # TODO: say exactly *why* the venv was invalidated
-                info('Removing invalidated virtualenv.')
-                run(('rm', '-rf', venv_path))
+                # the destination virtualenv is valid, modulo the python version
+                if source_python is None:
+                    source_python = destination_python
+                    info('Keeping valid virtualenv from previous run.')
+                    raise SystemExit(0)  # looks good! we're done here.
+                else:
+                    source_version = get_python_version(source_python)
+                    destination_version = get_python_version(destination_python)
+
+                    if source_version == destination_version:
+                        info('Keeping valid virtualenv from previous run.')
+                        raise SystemExit(0)  # looks good! we're done here.
+
+            # TODO: say exactly *why* the venv was invalidated
+            info('Removing invalidated virtualenv.')
+            run(('rm', '-rf', venv_path))
+
+        if source_python is None:
+            source_python = current_python
 
         if not samefile(current_python, source_python):
+            print('re-executing under %s' % timid_relpath(source_python))
             exec_((source_python, dotpy(__file__)) + args)  # never returns
 
     # this is actually a documented extension point:
@@ -305,7 +333,6 @@ class CacheOpts(object):
         self.wheelhouse = self.pipdir + '/wheelhouse'
 
         self.pip_options = (
-            '--download-cache=' + self.download_cache,
             '--find-links=file://' + self.wheelhouse,
         )
 
@@ -315,7 +342,7 @@ def venv_update(args):
 
     make a fresh venv at the right spot, make sure it has pip-faster, and use it
     """
-    exec_intermediate_virtualenv(args)
+    exec_scratch_virtualenv(args)
     # invariant: virtualenv (the library) is importable
     # invariant: we're not currently using the destination python
 
@@ -344,6 +371,10 @@ def do_update(venv_path, pip_options):
         args = ('-r', VENV_UPDATE_REQS_OVERRIDE)
     else:
         args = ('pip-faster==' + __version__,)
+
+    # disable a useless warning
+    from os import environ
+    environ['PIP_DISABLE_PIP_VERSION_CHECK'] = '1'
 
     # TODO: short-circuit when pip-faster is already there.
     run(pip_install + args)

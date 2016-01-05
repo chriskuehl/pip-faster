@@ -8,32 +8,45 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from subprocess import check_call
+from contextlib import contextmanager
 from sys import executable as python
 
 
-def info(*msg):
+@contextmanager
+def chdir(path):
+    from os import getcwd
+    if getcwd() == str(path):
+        yield
+        return
+
     from sys import stdout
-    stdout.write(' '.join(str(x) for x in msg))
-    stdout.write('\n')
-    stdout.flush()
+    stdout.write('cd %s\n' % path)
+    with path.as_cwd():
+        yield
+
+
+def run(cmd):
+    from sys import stdout
+    from subprocess import check_call
+    from pipes import quote
+    cmd_string = ' '.join(quote(arg) for arg in cmd)
+    stdout.write('%s\n' % (cmd_string))
+    check_call(cmd)
 
 
 def make_copy(setuppy, dst):
     pkg = setuppy.dirpath().basename
+    copy = dst.join('src', pkg).ensure(dir=True)
 
-    # unlike sdist, egg-info is reentrant-safe
-    check_call(
-        (python, 'setup.py', '--quiet', 'egg_info'),
-        cwd=setuppy.dirname,
-    )
+    # egg-info is also not reentrant-safe: it briefly blanks SOURCES.txt
+    with chdir(setuppy.dirpath()):
+        run((python, 'setup.py', '--quiet', 'egg_info', '--egg-base', str(copy)))
 
     from glob import glob
     sources = setuppy.dirpath().join('*/SOURCES.txt')
     sources, = glob(str(sources))
     sources = open(sources).read().splitlines()
 
-    copy = dst.join('src', pkg).ensure(dir=True)
     for source in sources:
         source = setuppy.dirpath().join(source)
         dest = copy.join(source.relto(setuppy))
@@ -43,12 +56,11 @@ def make_copy(setuppy, dst):
 
 
 def sdist(setuppy, dst):
-    info('sdist', setuppy.dirpath().basename)
     copy = make_copy(setuppy, dst)
-    check_call(
-        (python, 'setup.py', '--quiet', 'sdist', '--dist-dir', str(dst)),
-        cwd=str(copy),
-    )
+    with chdir(copy):
+        run(
+            (python, 'setup.py', '--quiet', 'sdist', '--dist-dir', str(dst)),
+        )
 
 
 def build_one(src, dst):
@@ -88,11 +100,9 @@ class public_pypi_enabled(object):
 
 
 def wheel(src, dst):
-    info('wheel', src)
-
     with public_pypi_enabled():
         build = dst.join('build')
-        check_call((
+        run((
             python, '-m', 'pip.__main__',
             'wheel',
             '--quiet',
@@ -104,9 +114,8 @@ def wheel(src, dst):
 
 
 def download_sdist(source, destination):
-    info('download sdist', source)
     with public_pypi_enabled():
-        check_call((
+        run((
             python, '-m', 'pip.__main__',
             'install',
             '--quiet',
@@ -120,6 +129,7 @@ def download_sdist(source, destination):
 
 def make_sdists(sources, destination):
     build_all(sources, destination)
+    wheel('virtualenv', destination)
     wheel('argparse', destination)
     wheel('coverage-enable-subprocess', destination)
     download_sdist('coverage', destination)

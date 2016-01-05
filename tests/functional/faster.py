@@ -45,7 +45,7 @@ def time_savings(tmpdir, between):
             'pure-python-package==0.2.0',
             'slow-python-package==0.1.0',
             'virtualenv==1.11.6',
-            'wheel==0.26.0',
+            'wheel==0.24.0',
             ''
         ))
         assert pip_freeze() == expected
@@ -103,7 +103,7 @@ def test_cached_clean_install_faster(tmpdir, pypi_packages):
                 'argparse',
                 'pip',
                 'pip_faster',
-                'virtualenv',
+                'virtualenv-1.11.6',
                 'wheel',
         ):
             pattern = str(pypi_packages.join(package + '-*.whl'))

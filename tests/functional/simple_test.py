@@ -44,7 +44,7 @@ def test_install_custom_path_and_requirements(tmpdir):
         'pip-faster==' + __version__,
         'six==1.8.0',
         'virtualenv==1.11.6',
-        'wheel==0.26.0',
+        'wheel==0.24.0',
         ''
     ))
 
@@ -182,7 +182,7 @@ def pipe_output(read, write):
     # FIXME: Sometimes this is 'python -m', sometimes 'python2.7 -m'. Weird.
     assert uncolored.endswith('''
 > virtualenv --version
-1.11.6
+13.1.2
 ''')
 
     return result, uncolored
@@ -275,7 +275,7 @@ pep8<=1.5.7
         'pip-faster==' + __version__,
         'pyflakes==0.7.3',
         'virtualenv==1.11.6',
-        'wheel==0.26.0',
+        'wheel==0.24.0',
         ''
     ))
 
@@ -302,7 +302,7 @@ pep8<=1.5.7
         'pip-faster==' + __version__,
         'pyflakes==0.8.1',
         'virtualenv==1.11.6',
-        'wheel==0.26.0',
+        'wheel==0.24.0',
         ''
     ))
 
@@ -345,17 +345,16 @@ pure_python_package
     out = uncolor(out)
     assert ' '.join((
         '\n> venv/bin/python -m pip.__main__ install',
-        '--download-cache=%s/home/.cache/pip-faster/download' % tmpdir,
         '--find-links=file://%s/home/.cache/pip-faster/wheelhouse' % tmpdir,
         '-r requirements.d/venv-update.txt\n',
     )) in out
-    assert '\nSuccessfully installed pip-faster pure-python-package ' in out
+    assert ('\nSuccessfully installed pip-1.5.6 pip-faster-%s pure-python-package-0.2.0 virtualenv-1.11.6' % __version__) in out
     assert '\n  Successfully uninstalled pure-python-package\n' in out
 
     expected = '\n'.join((
         'pip-faster==%s' % __version__,
         'virtualenv==1.11.6',
-        'wheel==0.26.0',
+        'wheel==0.24.0',
         ''
     ))
     assert pip_freeze() == expected
