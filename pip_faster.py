@@ -416,7 +416,6 @@ class FasterInstallCommand(InstallCommand):
         """update install options with caching values"""
         cache_opts = CacheOpts()
         options.find_links.append('file://' + cache_opts.wheelhouse)
-        options.download_cache = cache_opts.download_cache
 
         # from pip.commands.wheel: make the wheelhouse
         import os.path

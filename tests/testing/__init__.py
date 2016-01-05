@@ -84,6 +84,20 @@ def strip_coverage_warnings(stderr):
     return coverage_warnings_regex.sub('', stderr)
 
 
+pip_warnings_regex = Regex(
+    r'^Coverage.py warning: (%s)\n' % '|'.join((
+        r'Module .* was never imported\.',
+        r'No data was collected\.',
+        r'Module venv_update was previously imported, but not measured\.',
+    )),
+    flags=MULTILINE,
+)
+
+
+def strip_pip_warnings(stderr):
+    return pip_warnings_regex.sub('', stderr)
+
+
 def uncolor(text):
     # the colored_tty, uncolored_pipe tests cover this pretty well.
     from re import sub

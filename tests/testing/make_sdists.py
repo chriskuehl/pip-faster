@@ -43,12 +43,12 @@ def make_copy(setuppy, dst):
         run((python, 'setup.py', '--quiet', 'egg_info', '--egg-base', str(copy)))
 
     from glob import glob
-    sources = setuppy.dirpath().join('*/SOURCES.txt')
+    sources = copy.join('*/SOURCES.txt')
     sources, = glob(str(sources))
     sources = open(sources).read().splitlines()
 
     for source in sources:
-        source = setuppy.dirpath().join(source)
+        source = setuppy.dirpath().join(source, abs=1)
         dest = copy.join(source.relto(setuppy))
         dest.dirpath().ensure(dir=True)
         source.copy(dest)

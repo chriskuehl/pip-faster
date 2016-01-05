@@ -165,12 +165,6 @@ def get_python_version(interpreter):
     return check_output(cmd)
 
 
-# SMELL: global mutables :(
-class notlocal(object):
-    venv_path = None
-    pip_options = None
-
-
 def has_system_site_packages(interpreter):
     # TODO: unit-test
     system_site_packages = check_output((
@@ -192,26 +186,21 @@ print(
     return bool(system_site_packages)
 
 
-def ensure_virtualenv(args):   # FIXME!: too complex.
+def ensure_virtualenv(args, return_values):   # FIXME!: too complex.
     """Ensure we have a valid virtualenv."""
     def adjust_options(options, virtualenv_args):
         # TODO-TEST: proper error message with no arguments
         if not virtualenv_args or virtualenv_args[0].startswith('-'):
             virtualenv_args.insert(0, DEFAULT_VIRTUALENV_PATH)
-        venv_path = notlocal.venv_path = virtualenv_args[0]
+        venv_path = return_values.venv_path = virtualenv_args[0]
 
         if venv_path == DEFAULT_VIRTUALENV_PATH or options.prompt == '<dirname>':
             from os.path import abspath, basename, dirname
             options.prompt = '(%s)' % basename(dirname(abspath(venv_path)))
 
-        notlocal.pip_options = tuple(virtualenv_args[1:])
-        if notlocal.pip_options:
-            virtualenv_options = args[:-len(notlocal.pip_options)]
-            if virtualenv_options and virtualenv_options[-1] == '--':
-                virtualenv_options = virtualenv_options[:-1]
-        else:
-            virtualenv_options = args
-            notlocal.pip_options = ('-r', 'requirements.txt')
+        return_values.pip_options = tuple(virtualenv_args[1:])
+        if not return_values.pip_options:
+            return_values.pip_options = ('-r', 'requirements.txt')
         del virtualenv_args[1:]
         # end of option munging.
 
@@ -299,7 +288,7 @@ def mark_venv_valid(venv_path):
 def mark_venv_invalid(venv_path):
     # LBYL, to attempt to avoid any exception during exception handling
     from os.path import isdir
-    if isdir(venv_path):
+    if venv_path and isdir(venv_path):
         info('')
         info("Something went wrong! Sending '%s' back in time, so make knows it's invalid." % timid_relpath(venv_path))
         wait_for_all_subprocesses()
@@ -329,7 +318,6 @@ class CacheOpts(object):
         #   pattern people can use for open-source projects
         self.pipdir = user_cache_dir() + '/pip-faster'
         # We could combine these caches to one directory, but pip would search everything twice, going slower.
-        self.download_cache = self.pipdir + '/download'
         self.wheelhouse = self.pipdir + '/wheelhouse'
 
         self.pip_options = (
@@ -346,20 +334,25 @@ def venv_update(args):
     # invariant: virtualenv (the library) is importable
     # invariant: we're not currently using the destination python
 
-    ensure_virtualenv(args)
-    if notlocal.venv_path is None:
-        return
+    # FIXME: this is pretty gross.
+    class return_values(object):
+        venv_path = None
+        pip_options = None
 
     try:
-        raise_on_failure(lambda: do_update(notlocal.venv_path, notlocal.pip_options))
+        ensure_virtualenv(args, return_values)
+        if return_values.venv_path is None:
+            return
+        raise_on_failure(lambda: pip_faster(return_values.venv_path, return_values.pip_options))
     except BaseException:
-        mark_venv_invalid(notlocal.venv_path)
+        mark_venv_invalid(return_values.venv_path)
         raise
     else:
-        mark_venv_valid(notlocal.venv_path)
+        mark_venv_valid(return_values.venv_path)
 
 
-def do_update(venv_path, pip_options):
+def pip_faster(venv_path, pip_options):
+    """install and run pip-faster"""
     python = venv_python(venv_path)
     if not exists(python):
         return 'virtualenv executable not found: %s' % python
@@ -373,6 +366,7 @@ def do_update(venv_path, pip_options):
         args = ('pip-faster==' + __version__,)
 
     # disable a useless warning
+    # FIXME: ensure a "true SSLContext" is available
     from os import environ
     environ['PIP_DISABLE_PIP_VERSION_CHECK'] = '1'
 
@@ -401,7 +395,7 @@ def main():
     from sys import argv
     args = tuple(argv[1:])
     parseargs(args)
-    venv_update(args)
+    return venv_update(args)
 
 
 if __name__ == '__main__':
