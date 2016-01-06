@@ -348,7 +348,8 @@ pure_python_package
         '--find-links=file://%s/home/.cache/pip-faster/wheelhouse' % tmpdir,
         '-r requirements.d/venv-update.txt\n',
     )) in out
-    assert ('\nSuccessfully installed pip-1.5.6 pip-faster-%s pure-python-package-0.2.0 virtualenv-1.11.6' % __version__) in out
+    expected = ('\nSuccessfully installed pip-1.5.6 pip-faster-%s pure-python-package-0.2.0 virtualenv-1.11.6' % __version__)
+    assert expected in out
     assert '\n  Successfully uninstalled pure-python-package\n' in out
 
     expected = '\n'.join((

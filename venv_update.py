@@ -186,6 +186,32 @@ print(
     return bool(system_site_packages)
 
 
+def validate_virtualenv(venv_path, source_python, destination_python, options):
+    # TODO: unit-test this:
+    orig_venv_path = check_output(('sh', '-c', '. %s; printf "$VIRTUAL_ENV"' % venv_executable(venv_path, 'activate')))
+
+    if (
+            samefile(orig_venv_path, venv_path) and
+            has_system_site_packages(destination_python) == options.system_site_packages
+    ):
+        # the destination virtualenv is valid, modulo the python version
+        if source_python is None:
+            source_python = destination_python
+            info('Keeping valid virtualenv from previous run.')
+            raise SystemExit(0)  # looks good! we're done here.
+        else:
+            source_version = get_python_version(source_python)
+            destination_version = get_python_version(destination_python)
+
+            if source_version == destination_version:
+                info('Keeping valid virtualenv from previous run.')
+                raise SystemExit(0)  # looks good! we're done here.
+
+    # TODO: say exactly *why* the venv was invalidated
+    info('Removing invalidated virtualenv.')
+    run(('rm', '-rf', venv_path))
+
+
 def ensure_virtualenv(args, return_values):   # FIXME!: too complex.
     """Ensure we have a valid virtualenv."""
     def adjust_options(options, virtualenv_args):
@@ -219,29 +245,7 @@ def ensure_virtualenv(args, return_values):   # FIXME!: too complex.
             run(('rm', '-rf', venv_path))
 
         if exists(destination_python):
-            # TODO: unit-test this:
-            orig_venv_path = check_output(('sh', '-c', '. %s; printf "$VIRTUAL_ENV"' % venv_executable(venv_path, 'activate')))
-
-            if (
-                    samefile(orig_venv_path, venv_path) and
-                    has_system_site_packages(destination_python) == options.system_site_packages
-            ):
-                # the destination virtualenv is valid, modulo the python version
-                if source_python is None:
-                    source_python = destination_python
-                    info('Keeping valid virtualenv from previous run.')
-                    raise SystemExit(0)  # looks good! we're done here.
-                else:
-                    source_version = get_python_version(source_python)
-                    destination_version = get_python_version(destination_python)
-
-                    if source_version == destination_version:
-                        info('Keeping valid virtualenv from previous run.')
-                        raise SystemExit(0)  # looks good! we're done here.
-
-            # TODO: say exactly *why* the venv was invalidated
-            info('Removing invalidated virtualenv.')
-            run(('rm', '-rf', venv_path))
+            validate_virtualenv(venv_path, source_python, destination_python, options)
 
         if source_python is None:
             source_python = current_python
