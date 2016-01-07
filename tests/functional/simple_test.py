@@ -60,7 +60,8 @@ def test_arguments_version(tmpdir):
 
     out = uncolor(out)
     lines = out.splitlines()
-    assert len(lines) in (13, 14), repr(lines)
+    # 13:py27 14:py35 15:pypy
+    assert len(lines) in (13, 14, 15), repr(lines)
     assert lines[-2] == '> virtualenv --version', repr(lines)
 
 
