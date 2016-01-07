@@ -231,7 +231,8 @@ def test_get_python_version():
 
     expected = '.'.join(str(part) for part in sys.version_info[:3])
     actual = venv_update.get_python_version(sys.executable)
-    assert actual.startswith(expected + ' ')
+    assert actual.startswith(expected)
+    assert actual[len(expected)] in ' +'
 
     assert venv_update.get_python_version('total garbage') is None
 

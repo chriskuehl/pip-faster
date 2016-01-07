@@ -44,7 +44,7 @@ def test_install_custom_path_and_requirements(tmpdir):
         'pip-faster==' + __version__,
         'six==1.8.0',
         'virtualenv==1.11.6',
-        'wheel==0.24.0',
+        'wheel==0.26.0',
         ''
     ))
 
@@ -60,7 +60,7 @@ def test_arguments_version(tmpdir):
 
     out = uncolor(out)
     lines = out.splitlines()
-    assert len(lines) == 13, repr(lines)
+    assert len(lines) in (13, 14), repr(lines)
     assert lines[-2] == '> virtualenv --version', repr(lines)
 
 
@@ -241,7 +241,7 @@ def test_args_backward(tmpdir):
 def test_wrong_wheel(tmpdir):
     tmpdir.chdir()
 
-    requirements('')
+    requirements('pure_python_package==0.1.0')
     venv_update('venv1')
     # A different python
     # Before fixing, this would install argparse using the `py2-none-any`
@@ -249,8 +249,9 @@ def test_wrong_wheel(tmpdir):
     other_python = OtherPython()
     ret2out, _ = venv_update('venv2', '-p' + other_python.interpreter)
 
-    assert other_python.right_tag + '-none-any' in ret2out
-    assert other_python.wrong_tag + '-none-any' not in ret2out
+    assert '''
+  SLOW!! no wheel found for pinned requirement pure-python-package==0.1.0 (from -r requirements.txt (line 1))
+''' in ret2out
 
 
 def flake8_older():
@@ -275,7 +276,7 @@ pep8<=1.5.7
         'pip-faster==' + __version__,
         'pyflakes==0.7.3',
         'virtualenv==1.11.6',
-        'wheel==0.24.0',
+        'wheel==0.26.0',
         ''
     ))
 
@@ -302,7 +303,7 @@ pep8<=1.5.7
         'pip-faster==' + __version__,
         'pyflakes==0.8.1',
         'virtualenv==1.11.6',
-        'wheel==0.24.0',
+        'wheel==0.26.0',
         ''
     ))
 
@@ -355,7 +356,7 @@ pure_python_package
     expected = '\n'.join((
         'pip-faster==%s' % __version__,
         'virtualenv==1.11.6',
-        'wheel==0.24.0',
+        'wheel==0.26.0',
         ''
     ))
     assert pip_freeze() == expected

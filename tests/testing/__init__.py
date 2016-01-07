@@ -137,10 +137,6 @@ class OtherPython(object):
         if sys.version_info[0] <= 2:
             self.interpreter = 'python3.4'
             self.version_prefix = '3.4.'
-            self.right_tag = 'py3'
-            self.wrong_tag = 'py2'
         else:
             self.interpreter = 'python2.6'
             self.version_prefix = '2.6.'
-            self.right_tag = 'py2'
-            self.wrong_tag = 'py3'

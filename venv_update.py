@@ -154,7 +154,7 @@ def check_output(cmd):
         raise CalledProcessError(process.returncode, cmd)
     else:
         assert process.returncode == 0
-        return output
+        return output.decode('UTF-8')
 
 
 def get_python_version(interpreter):
